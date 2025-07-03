@@ -94,20 +94,37 @@ elif auth_status:
     @st.cache_data
     def load_data(file):
         try:
-            if file.name.endswith('.csv'): df = pd.read_csv(file)
-            else: df = pd.read_excel(file)
-            if 'Date' in df.columns: df.rename(columns={'Date': 'Sales Date'}, inplace=True)
+            if file.name.endswith('.csv'): 
+                df = pd.read_csv(file)
+            else: 
+                df = pd.read_excel(file)
+
+            if 'Date' in df.columns: 
+                df.rename(columns={'Date': 'Sales Date'}, inplace=True)
+
             if 'Sales Date' not in df.columns:
-                st.error("Error: Kolom 'Sales Date' atau 'Date' tidak ditemukan."); return None
+                st.error("Error: Kolom 'Sales Date' atau 'Date' tidak ditemukan.")
+                return None
+
             df['Sales Date'] = pd.to_datetime(df['Sales Date']).dt.date
+
             numeric_cols = ['Qty', 'Price', 'Subtotal', 'Discount', 'Service Charge', 'Tax', 'VAT', 'Total', 'Nett Sales', 'Bill Discount', 'Total After Bill Discount']
             for col in numeric_cols:
                 if col in df.columns and df[col].dtype == 'object':
                     df[col] = df[col].astype(str).str.replace(',', '', regex=False).astype(float)
-            df['Branch'].fillna('Tidak Diketahui', inplace=True)
+
+            if 'Branch' not in df.columns:
+                st.error("Kolom 'Branch' tidak ditemukan dalam data Anda.")
+                return None
+
+            df['Branch'] = df['Branch'].fillna('Tidak Diketahui')
+
             return df
+
         except Exception as e:
-            st.error(f"Terjadi kesalahan saat memuat file: {e}"); return None
+            st.error(f"Terjadi kesalahan saat memuat file: {e}")
+            return None
+
 
     # --- UI dan Sisa Kode (tidak berubah signifikan) ---
     st.sidebar.title("Filter Data")
