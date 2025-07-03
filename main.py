@@ -1,3 +1,6 @@
+import os
+os.environ["WATCHFILES_DISABLE_INOTIFY"] = "1"
+
 import streamlit as st
 import streamlit_authenticator as stauth
 import pandas as pd
