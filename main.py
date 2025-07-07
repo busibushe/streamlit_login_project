@@ -103,15 +103,17 @@ uploaded_file = st.sidebar.file_uploader("1. Unggah File Excel/CSV Anda", type=[
 # Logika ini hanya berjalan saat file baru diunggah untuk mengisi session_state
 if uploaded_file is not None:
     if 'current_file_name' not in st.session_state or st.session_state.current_file_name != uploaded_file.name:
-        st.session_state.clear()
-        st.session_state.current_file_name = uploaded_file.name
         try:
             with st.spinner("Membaca file..."):
-                st.session_state.df_raw = load_raw_data(uploaded_file)
+                df_raw_temp = load_raw_data(uploaded_file)
         except ValueError as e:
             st.error(e)
             st.stop()
-        # Penting: set ulang rerun untuk masuk ke tahap mapping
+        
+        # Baru setelah data berhasil dibaca, lakukan clear dan simpan ulang
+        st.session_state.clear()
+        st.session_state.current_file_name = uploaded_file.name
+        st.session_state.df_raw = df_raw_temp
         st.rerun()
 
 # --- Alur Aplikasi Berbasis Session State ---
