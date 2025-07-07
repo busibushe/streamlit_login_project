@@ -85,29 +85,29 @@ def display_analysis_with_details(title, analysis_text, p_value):
 # LOGIKA AUTENTIKASI
 # ==============================================================================
 
-# Ubah list of users menjadi dict seperti yang diharapkan oleh stauth
-raw_users = st.secrets["credentials"]["usernames"]
+import streamlit as st
+import streamlit_authenticator as stauth
 
+# Membaca konfigurasi dari secrets
 credentials = {
-    "usernames": {
-        user["username"]: {
-            "name": user["name"],
-            "password": user["password"]
-        } for user in raw_users
-    }
+    "usernames": st.secrets["credentials"]["usernames"]
 }
 
-# Cookie settings
-cookie = st.secrets["cookie"]
+authenticator = stauth.Authenticate(
+    credentials,
+    "dashboard_login",  # cookie_name
+    "random_cookie_key_123",  # signature_key
+    cookie_expiry_days=1
+)
 
-# Inisialisasi authenticator
-authenticator = stauth.Authenticate(credentials, cookie["name"], cookie["key"], cookie["expiry_days"])
-name, auth_status, username = authenticator.login("Login", "main")
+name, authentication_status, username = authenticator.login("Login", "main")
 
-if not auth_status:
-    if auth_status is False: st.error("Username atau password salah.")
-    else: st.warning("Silakan masukkan username dan password.")
-    st.stop()
+if authentication_status:
+    st.success(f"Welcome {name}")
+elif authentication_status is False:
+    st.error("Username/password is incorrect")
+elif authentication_status is None:
+    st.warning("Please enter your username and password")
 
 # ==============================================================================
 # APLIKASI UTAMA (SETELAH LOGIN BERHASIL)
