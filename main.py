@@ -33,17 +33,21 @@ def process_data(df, column_mapping):
     Memproses DataFrame mentah setelah pemetaan kolom: mengganti nama,
     mengonversi tipe data, dan membersihkan.
     """
+    # Balikkan mapping untuk rename: {nama_asli: nama_standar}
     rename_dict = {v: k for k, v in column_mapping.items()}
     df_processed = df.rename(columns=rename_dict)
     
+    # Proses data menggunakan nama kolom standar
     df_processed['Sales Date'] = pd.to_datetime(df_processed['Sales Date'], errors='coerce').dt.date
     df_processed['Branch'] = df_processed['Branch'].fillna('Tidak Diketahui').astype(str)
     
-    numeric_cols = ['Nett Sales', 'Qty', 'Bill Number']
+    # Konversi kolom numerik
+    numeric_cols = ['Nett Sales', 'Qty', 'Bill Number'] # Kolom numerik wajib
     for col in numeric_cols:
         if col in df_processed.columns:
             df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce')
 
+    # Hapus baris di mana kolom wajib menjadi NaT/NaN setelah konversi
     df_processed.dropna(subset=['Sales Date', 'Nett Sales', 'Qty', 'Bill Number'], inplace=True)
     return df_processed
 
@@ -100,63 +104,62 @@ st.sidebar.title("Pengaturan Data")
 # --- Tahap 1: Unggah File ---
 uploaded_file = st.sidebar.file_uploader("1. Unggah File Excel/CSV Anda", type=["xlsx", "xls", "csv"])
 
-# Logika ini hanya berjalan saat file baru diunggah untuk mengisi session_state
-if uploaded_file is not None:
+if uploaded_file:
+    # Jika file baru diunggah, reset state sebelumnya
     if 'current_file_name' not in st.session_state or st.session_state.current_file_name != uploaded_file.name:
         st.session_state.clear()
         st.session_state.current_file_name = uploaded_file.name
         try:
-            with st.spinner("Membaca file..."):
-                st.session_state.df_raw = load_raw_data(uploaded_file)
+            st.session_state.df_raw = load_raw_data(uploaded_file)
         except ValueError as e:
             st.error(e)
             st.stop()
-        # Penting: set ulang rerun untuk masuk ke tahap mapping
-        st.rerun()
+            
+    # --- Tahap 2: Pemetaan Kolom ---
+    if 'df_raw' in st.session_state and 'df_processed' not in st.session_state:
+        st.sidebar.markdown("---")
+        st.sidebar.header("2. Pemetaan Kolom")
+        st.sidebar.info("Cocokkan kolom dari file Anda dengan kolom yang dibutuhkan aplikasi.")
+        
+        df_columns = st.session_state.df_raw.columns.tolist()
+        required_columns = {
+            "Sales Date": "Kolom berisi tanggal transaksi",
+            "Branch": "Kolom berisi nama cabang/toko",
+            "Nett Sales": "Kolom berisi nilai penjualan bersih",
+            "Bill Number": "Kolom berisi nomor unik transaksi/struk",
+            "Menu": "Kolom berisi nama item/menu",
+            "Qty": "Kolom berisi kuantitas item terjual"
+        }
+        
+        with st.sidebar.form(key='mapping_form'):
+            column_mapping = {}
+            for standard_col, help_text in required_columns.items():
+                column_mapping[standard_col] = st.selectbox(
+                    f"Pilih kolom untuk **{standard_col}**",
+                    options=df_columns,
+                    help=help_text
+                )
+            
+            submit_button = st.form_submit_button(label='Terapkan Pemetaan & Proses Data')
 
-# --- Alur Aplikasi Berbasis Session State ---
+        if submit_button:
+            # Validasi pemetaan: pastikan tidak ada kolom yang dipilih berulang
+            if len(set(column_mapping.values())) != len(required_columns):
+                st.error("Setiap kolom dari file Anda hanya boleh dipetakan satu kali. Mohon periksa kembali pilihan Anda.")
+            else:
+                with st.spinner("Memproses dan membersihkan data..."):
+                    try:
+                        st.session_state.df_processed = process_data(st.session_state.df_raw, column_mapping)
+                        st.success("Data berhasil diproses! Dashboard ditampilkan.")
+                        st.rerun() # Jalankan ulang skrip untuk menampilkan dashboard
+                    except Exception as e:
+                        st.error(f"Gagal memproses data: {e}")
 
-# Jika belum ada file sama sekali
-if 'df_raw' not in st.session_state:
-    st.info("Selamat datang! Silakan unggah file data penjualan Anda untuk memulai analisis.")
-    st.stop()
-
-# Tahap 2: Tampilkan Pemetaan Kolom jika data mentah ada, tapi belum diproses
-if 'df_processed' not in st.session_state:
-    st.sidebar.markdown("---")
-    st.sidebar.header("2. Pemetaan Kolom")
-    st.sidebar.info("Cocokkan kolom dari file Anda dengan kolom yang dibutuhkan aplikasi.")
-    
-    df_columns = st.session_state.df_raw.columns.tolist()
-    required_columns = {
-        "Sales Date": "Kolom berisi tanggal transaksi", "Branch": "Kolom berisi nama cabang/toko",
-        "Nett Sales": "Kolom berisi nilai penjualan bersih", "Bill Number": "Kolom berisi nomor unik transaksi/struk",
-        "Menu": "Kolom berisi nama item/menu", "Qty": "Kolom berisi kuantitas item terjual"
-    }
-    
-    with st.sidebar.form(key='mapping_form'):
-        column_mapping = {std_col: st.selectbox(f"Pilih kolom untuk **{std_col}**", df_columns, help=help_text) for std_col, help_text in required_columns.items()}
-        submit_button = st.form_submit_button(label='Terapkan Pemetaan & Proses Data')
-
-    if submit_button:
-        if len(set(column_mapping.values())) != len(required_columns):
-            st.error("Setiap kolom dari file Anda hanya boleh dipetakan satu kali.")
-        else:
-            with st.spinner("Memproses dan membersihkan data..."):
-                try:
-                    st.session_state.df_processed = process_data(st.session_state.df_raw, column_mapping)
-                    st.success("Data berhasil diproses!")
-                    st.rerun() # Jalankan ulang skrip untuk menampilkan dashboard
-                except Exception as e:
-                    st.error(f"Gagal memproses data: {e}")
-    else:
-        st.info("Silakan lakukan pemetaan kolom di sidebar kiri dan klik tombol 'Terapkan' untuk melanjutkan.")
-        st.stop()
-
-# Tahap 3: Tampilkan Dashboard jika data sudah berhasil diproses
+# --- Tahap 3: Tampilkan Dashboard ---
 if 'df_processed' in st.session_state:
     df = st.session_state.df_processed
     
+    # --- UI Filter ---
     st.sidebar.markdown("---")
     st.sidebar.header("3. Filter Dashboard")
     
@@ -169,12 +172,14 @@ if 'df_processed' in st.session_state:
     if len(date_range) != 2: st.warning("Mohon pilih rentang tanggal yang valid."); st.stop()
     start_date, end_date = date_range
     df_filtered = df[(df['Branch'] == selected_branch) & (df['Sales Date'] >= start_date) & (df['Sales Date'] <= end_date)]
-    if df_filtered.empty: st.warning("Tidak ada data yang ditemukan untuk filter yang Anda pilih."); st.stop()
+    if df_filtered.empty: st.warning("Tidak ada data untuk filter yang dipilih."); st.stop()
 
+    # --- Tampilan Dashboard ---
     st.title(f"📊 Dashboard Performa: {selected_branch}")
     st.markdown(f"Analisis data dari **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
     st.markdown("---")
 
+    # Agregasi Bulanan
     monthly_df = df_filtered.copy()
     monthly_df['Bulan'] = pd.to_datetime(monthly_df['Sales Date']).dt.to_period('M')
     monthly_agg = monthly_df.groupby('Bulan').agg(
@@ -185,6 +190,7 @@ if 'df_processed' in st.session_state:
         monthly_agg['AOV'] = monthly_agg.apply(lambda row: row['TotalMonthlySales'] / row['TotalTransactions'] if row['TotalTransactions'] > 0 else 0, axis=1)
         monthly_agg['Bulan'] = monthly_agg['Bulan'].dt.to_timestamp()
 
+    # Tampilan KPI
     col1, col2, col3 = st.columns(3)
     if len(monthly_agg) >= 2:
         last_month = monthly_agg.iloc[-1]
@@ -202,6 +208,7 @@ if 'df_processed' in st.session_state:
         col3.metric("💳 AOV Bulan Terakhir", f"Rp {last_month['AOV']:,.0f}")
     st.markdown("---")
 
+    # Tampilan Visualisasi
     col_chart, col_table = st.columns([2, 1])
     with col_chart:
         if not monthly_agg.empty:
@@ -212,6 +219,7 @@ if 'df_processed' in st.session_state:
             st.plotly_chart(fig_sales, use_container_width=True)
             display_analysis_with_details("Analisis Tren Penjualan", sales_analysis, sales_p_value)
             
+            # ... (kode visualisasi lainnya) ...
             st.subheader("Tren Transaksi Bulanan")
             fig_trx = px.line(monthly_agg, x='Bulan', y='TotalTransactions', markers=True, labels={'Bulan': 'Bulan', 'TotalTransactions': 'Jumlah Transaksi'})
             fig_trx.update_traces(line_color='orange')
@@ -229,13 +237,10 @@ if 'df_processed' in st.session_state:
             display_analysis_with_details("Analisis Tren AOV", aov_analysis, aov_p_value)
         else:
             st.warning("Tidak ada data bulanan untuk divisualisasikan pada rentang waktu ini.")
-            
     with col_table:
         st.subheader("Menu Terlaris (berdasarkan Qty)")
-        # Cek apakah kolom Menu ada sebelum melakukan groupby
-        if 'Menu' in df_filtered.columns and 'Qty' in df_filtered.columns:
-            top_menus = df_filtered.groupby('Menu')['Qty'].sum().sort_values(ascending=False).reset_index().head(10)
-            top_menus.index = top_menus.index + 1
-            st.dataframe(top_menus, use_container_width=True)
-        else:
-            st.warning("Kolom 'Menu' atau 'Qty' tidak tersedia untuk ditampilkan.")
+        top_menus = df_filtered.groupby('Menu')['Qty'].sum().sort_values(ascending=False).reset_index().head(10)
+        top_menus.index = top_menus.index + 1
+        st.dataframe(top_menus, use_container_width=True)
+else:
+    st.info("Selamat datang! Silakan unggah file data penjualan Anda untuk memulai analisis.")
