@@ -98,7 +98,7 @@ if not auth_status:
 # APLIKASI UTAMA (SETELAH LOGIN BERHASIL)
 # ==============================================================================
 authenticator.logout("Logout", "sidebar")
-st.sidebar.success(f"Login sebagai: {name}")
+st.sidebar.success(f"Selamat Datang {name}")
 st.sidebar.title("Pengaturan Data")
 
 # --- Tahap 1: Unggah File ---
