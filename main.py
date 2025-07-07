@@ -87,13 +87,15 @@ def display_analysis_with_details(title, analysis_text, p_value):
 
 import streamlit as st
 import streamlit_authenticator as stauth
+import copy
 
 authenticator = stauth.Authenticate(
-    st.secrets["credentials"],
-    st.secrets["cookie"]["name"],
-    st.secrets["cookie"]["key"],
-    st.secrets["cookie"]["expiry_days"]
+    credentials=copy.deepcopy(st.secrets["credentials"]),
+    cookie_name=st.secrets["cookie"]["name"],
+    key=st.secrets["cookie"]["key"],
+    expiry_days=st.secrets["cookie"]["expiry_days"]
 )
+
 
 name, authentication_status, username = authenticator.login("Login", "main")
 
