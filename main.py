@@ -88,16 +88,11 @@ def display_analysis_with_details(title, analysis_text, p_value):
 import streamlit as st
 import streamlit_authenticator as stauth
 
-# Membaca konfigurasi dari secrets
-credentials = {
-    "usernames": st.secrets["credentials"]["usernames"]
-}
-
 authenticator = stauth.Authenticate(
-    credentials,
-    "dashboard_login",  # cookie_name
-    "random_cookie_key_123",  # signature_key
-    cookie_expiry_days=1
+    st.secrets["credentials"],
+    st.secrets["cookie"]["name"],
+    st.secrets["cookie"]["key"],
+    st.secrets["cookie"]["expiry_days"]
 )
 
 name, authentication_status, username = authenticator.login("Login", "main")
