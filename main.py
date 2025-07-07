@@ -85,21 +85,23 @@ def display_analysis_with_details(title, analysis_text, p_value):
 # LOGIKA AUTENTIKASI
 # ==============================================================================
 
-# Ubah struktur credentials menjadi format dict agar cocok dengan stauth
+# Ubah list of users menjadi dict seperti yang diharapkan oleh stauth
+raw_users = st.secrets["credentials"]["usernames"]
+
 credentials = {
-    'usernames': {
-        user['username']: {
-            'name': user['name'],
-            'password': user['password']
-        } for user in st.secrets['credentials']['usernames']
+    "usernames": {
+        user["username"]: {
+            "name": user["name"],
+            "password": user["password"]
+        } for user in raw_users
     }
 }
 
-# Ambil setting cookie
-cookie = st.secrets['cookie'].to_dict()
+# Cookie settings
+cookie = st.secrets["cookie"]
 
-# Autentikasi
-authenticator = stauth.Authenticate(credentials, cookie['name'], cookie['key'], cookie['expiry_days'])
+# Inisialisasi authenticator
+authenticator = stauth.Authenticate(credentials, cookie["name"], cookie["key"], cookie["expiry_days"])
 name, auth_status, username = authenticator.login("Login", "main")
 
 if not auth_status:
