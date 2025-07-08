@@ -36,14 +36,17 @@ def process_data(df, column_mapping):
     rename_dict = {v: k for k, v in column_mapping.items()}
     df_processed = df.rename(columns=rename_dict)
     
+    # Proses data menggunakan nama kolom standar
     df_processed['Sales Date'] = pd.to_datetime(df_processed['Sales Date'], errors='coerce').dt.date
     df_processed['Branch'] = df_processed['Branch'].fillna('Tidak Diketahui').astype(str)
     
-    numeric_cols = ['Nett Sales', 'Qty', 'Bill Number']
+    # Konversi kolom numerik
+    numeric_cols = ['Nett Sales', 'Qty', 'Bill Number'] # Kolom numerik wajib
     for col in numeric_cols:
         if col in df_processed.columns:
             df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce')
 
+    # Hapus baris di mana kolom wajib menjadi NaT/NaN setelah konversi
     df_processed.dropna(subset=['Sales Date', 'Nett Sales', 'Qty', 'Bill Number'], inplace=True)
     return df_processed
 
@@ -100,30 +103,23 @@ st.sidebar.title("Pengaturan Data")
 # --- Tahap 1: Unggah File ---
 uploaded_file = st.sidebar.file_uploader("1. Unggah File Excel/CSV Anda", type=["xlsx", "xls", "csv"])
 
-# Logika ini hanya berjalan saat file baru diunggah untuk mengisi session_state
 if uploaded_file is not None:
     if 'current_file_name' not in st.session_state or st.session_state.current_file_name != uploaded_file.name:
+        st.session_state.clear()
+        st.session_state.current_file_name = uploaded_file.name
         try:
             with st.spinner("Membaca file..."):
-                df_raw_temp = load_raw_data(uploaded_file)
+                st.session_state.df_raw = load_raw_data(uploaded_file)
         except ValueError as e:
             st.error(e)
             st.stop()
-        
-        # Baru setelah data berhasil dibaca, lakukan clear dan simpan ulang
-        st.session_state.clear()
-        st.session_state.current_file_name = uploaded_file.name
-        st.session_state.df_raw = df_raw_temp
         st.rerun()
 
 # --- Alur Aplikasi Berbasis Session State ---
-
-# Jika belum ada file sama sekali
 if 'df_raw' not in st.session_state:
     st.info("Selamat datang! Silakan unggah file data penjualan Anda untuk memulai analisis.")
     st.stop()
 
-# Tahap 2: Tampilkan Pemetaan Kolom jika data mentah ada, tapi belum diproses
 if 'df_processed' not in st.session_state:
     st.sidebar.markdown("---")
     st.sidebar.header("2. Pemetaan Kolom")
@@ -148,17 +144,27 @@ if 'df_processed' not in st.session_state:
                 try:
                     st.session_state.df_processed = process_data(st.session_state.df_raw, column_mapping)
                     st.success("Data berhasil diproses!")
-                    st.rerun() # Jalankan ulang skrip untuk menampilkan dashboard
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Gagal memproses data: {e}")
     else:
         st.info("Silakan lakukan pemetaan kolom di sidebar kiri dan klik tombol 'Terapkan' untuk melanjutkan.")
         st.stop()
 
-# Tahap 3: Tampilkan Dashboard jika data sudah berhasil diproses
 if 'df_processed' in st.session_state:
     df = st.session_state.df_processed
     
+    # --- PERBAIKAN DI SINI ---
+    # Tambahkan pengecekan apakah DataFrame kosong SETELAH diproses
+    if df.empty:
+        st.error(
+            "Tidak ada data yang valid ditemukan setelah pemrosesan. "
+            "Ini bisa terjadi jika kolom yang Anda petakan untuk 'Sales Date' tidak berisi format tanggal yang bisa dikenali. "
+            "Mohon periksa kembali file atau pemetaan kolom Anda."
+        )
+        st.stop()
+    # -------------------------
+
     st.sidebar.markdown("---")
     st.sidebar.header("3. Filter Dashboard")
     
@@ -228,13 +234,12 @@ if 'df_processed' in st.session_state:
             aov_analysis, aov_trendline, aov_p_value = analyze_trend_v2(monthly_agg['AOV'], monthly_agg['Bulan'].dt.strftime('%b %Y'))
             if aov_trendline is not None: fig_aov.add_scatter(x=monthly_agg['Bulan'], y=aov_trendline, mode='lines', name='Garis Tren', line=dict(color='red', dash='dash'))
             st.plotly_chart(fig_aov, use_container_width=True)
-            display_analysis_with_details("Analisis Tren AOV", aov_analysis, aov_p_value)
+            display_analysis_with_details("Analisis Tren AOV", aov_analysis, a_p_value)
         else:
             st.warning("Tidak ada data bulanan untuk divisualisasikan pada rentang waktu ini.")
             
     with col_table:
         st.subheader("Menu Terlaris (berdasarkan Qty)")
-        # Cek apakah kolom Menu ada sebelum melakukan groupby
         if 'Menu' in df_filtered.columns and 'Qty' in df_filtered.columns:
             top_menus = df_filtered.groupby('Menu')['Qty'].sum().sort_values(ascending=False).reset_index().head(10)
             top_menus.index = top_menus.index + 1
