@@ -36,18 +36,16 @@ def process_data(df, column_mapping):
     rename_dict = {v: k for k, v in column_mapping.items()}
     df_processed = df.rename(columns=rename_dict)
     
-    # Proses data menggunakan nama kolom standar
     df_processed['Sales Date'] = pd.to_datetime(df_processed['Sales Date'], errors='coerce').dt.date
     df_processed['Branch'] = df_processed['Branch'].fillna('Tidak Diketahui').astype(str)
     
-    # Konversi kolom numerik
-    numeric_cols = ['Nett Sales', 'Qty', 'Bill Number'] # Kolom numerik wajib
+    numeric_cols = ['Nett Sales', 'Qty', 'Bill Number', 'Menu']
     for col in numeric_cols:
         if col in df_processed.columns:
-            df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce')
+            if col in ['Nett Sales', 'Qty', 'Bill Number']:
+                df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce')
 
-    # Hapus baris di mana kolom wajib menjadi NaT/NaN setelah konversi
-    df_processed.dropna(subset=['Sales Date', 'Nett Sales', 'Qty', 'Bill Number'], inplace=True)
+    df_processed.dropna(subset=['Sales Date', 'Nett Sales', 'Qty', 'Bill Number', 'Menu'], inplace=True)
     return df_processed
 
 def analyze_trend_v2(data_series, time_series):
@@ -151,19 +149,25 @@ if 'df_processed' not in st.session_state:
         st.info("Silakan lakukan pemetaan kolom di sidebar kiri dan klik tombol 'Terapkan' untuk melanjutkan.")
         st.stop()
 
+# --- Tahap 3: Tampilkan Dashboard ---
 if 'df_processed' in st.session_state:
     df = st.session_state.df_processed
     
-    # --- PERBAIKAN DI SINI ---
+    # --- PERBAIKAN KRUSIAL DI SINI ---
     # Tambahkan pengecekan apakah DataFrame kosong SETELAH diproses
+    # Ini adalah pintu pengaman untuk mencegah error pada st.date_input
     if df.empty:
         st.error(
             "Tidak ada data yang valid ditemukan setelah pemrosesan. "
-            "Ini bisa terjadi jika kolom yang Anda petakan untuk 'Sales Date' tidak berisi format tanggal yang bisa dikenali. "
+            "Ini bisa terjadi jika kolom yang Anda petakan untuk 'Sales Date' tidak berisi format tanggal yang bisa dikenali atau kolom wajib lainnya kosong. "
             "Mohon periksa kembali file atau pemetaan kolom Anda."
         )
+        # Hapus state agar pengguna bisa mencoba lagi dengan file/mapping baru
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.button("Coba Lagi")
         st.stop()
-    # -------------------------
+    # ------------------------------------
 
     st.sidebar.markdown("---")
     st.sidebar.header("3. Filter Dashboard")
@@ -234,7 +238,7 @@ if 'df_processed' in st.session_state:
             aov_analysis, aov_trendline, aov_p_value = analyze_trend_v2(monthly_agg['AOV'], monthly_agg['Bulan'].dt.strftime('%b %Y'))
             if aov_trendline is not None: fig_aov.add_scatter(x=monthly_agg['Bulan'], y=aov_trendline, mode='lines', name='Garis Tren', line=dict(color='red', dash='dash'))
             st.plotly_chart(fig_aov, use_container_width=True)
-            display_analysis_with_details("Analisis Tren AOV", aov_analysis, a_p_value)
+            display_analysis_with_details("Analisis Tren AOV", aov_analysis, aov_p_value)
         else:
             st.warning("Tidak ada data bulanan untuk divisualisasikan pada rentang waktu ini.")
             
