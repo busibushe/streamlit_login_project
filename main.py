@@ -1,5 +1,3 @@
-# work
-
 import os
 os.environ["WATCHFILES_DISABLE_INOTIFY"] = "1"
 
@@ -15,14 +13,14 @@ import scipy.stats as stats
 # ==============================================================================
 
 # 1. Pindahkan st.set_page_config() ke bagian paling atas
-st.set_page_config(page_title="Dashboard Penjualan", layout="wide")
+st.set_page_config(page_title="Dashboard Performa", layout="wide")
 
 # 2. Definisikan semua fungsi di sini, di luar blok autentikasi
 
 @st.cache_data
-def load_data(file):
+def load_sales_data(file):
     """
-    Memuat dan membersihkan data dari file yang diunggah.
+    Memuat dan membersihkan data penjualan dari file yang diunggah.
     Fungsi ini sekarang "murni" dan tidak mengandung perintah UI (st.error).
     Jika terjadi kesalahan, fungsi akan melempar ValueError.
     """
@@ -36,11 +34,19 @@ def load_data(file):
         if 'Date' in df.columns:
             df.rename(columns={'Date': 'Sales Date'}, inplace=True)
         if 'Sales Date' not in df.columns:
-            raise ValueError("Kolom 'Sales Date' atau 'Date' tidak ditemukan di dalam file.")
+            raise ValueError("Kolom 'Sales Date' atau 'Date' tidak ditemukan di dalam file penjualan.")
 
         # Validasi kolom Branch
         if 'Branch' not in df.columns:
-            raise ValueError("Kolom 'Branch' tidak ditemukan di dalam file.")
+            raise ValueError("Kolom 'Branch' tidak ditemukan di dalam file penjualan.")
+        
+        # Validasi kolom Menu
+        if 'Menu' not in df.columns:
+            raise ValueError("Kolom 'Menu' tidak ditemukan di dalam file penjualan.")
+        
+        # Validasi kolom Bill Number
+        if 'Bill Number' not in df.columns:
+            raise ValueError("Kolom 'Bill Number' tidak ditemukan di dalam file penjualan.")
 
         # Proses data
         df['Sales Date'] = pd.to_datetime(df['Sales Date']).dt.date
@@ -55,22 +61,50 @@ def load_data(file):
 
     except Exception as e:
         # Melempar kembali error yang lebih spesifik untuk ditangkap nanti
-        raise ValueError(f"Terjadi kesalahan saat memproses file: {e}")
+        raise ValueError(f"Terjadi kesalahan saat memproses file penjualan: {e}")
+
+@st.cache_data
+def load_qc_data(file):
+    """
+    Memuat dan membersihkan data QC dari file yang diunggah.
+    """
+    try:
+        df_qc = pd.read_excel(file)
+
+        # Asumsi nama kolom: 'Date', 'Branch', 'QC Score'
+        if 'Date' not in df_qc.columns:
+            raise ValueError("Kolom 'Date' tidak ditemukan di dalam file QC.")
+        if 'Branch' not in df_qc.columns:
+            raise ValueError("Kolom 'Branch' tidak ditemukan di dalam file QC.")
+        if 'QC Score' not in df_qc.columns:
+            raise ValueError("Kolom 'QC Score' tidak ditemukan di dalam file QC.")
+
+        df_qc['Date'] = pd.to_datetime(df_qc['Date']).dt.date
+        df_qc['Branch'] = df_qc['Branch'].fillna('Tidak Diketahui')
+        df_qc['QC Score'] = pd.to_numeric(df_qc['QC Score'], errors='coerce')
+        
+        return df_qc
+
+    except Exception as e:
+        raise ValueError(f"Terjadi kesalahan saat memproses file QC: {e}")
 
 
 def analyze_trend_v2(data_series, time_series):
     """
     Menganalisis tren dan mengembalikan narasi, garis tren, dan p-value untuk penjelasan.
     """
-    if len(data_series) < 3:
+    if len(data_series.dropna()) < 3: # Menggunakan dropna() untuk menangani bulan tanpa data QC
         return "Data tidak cukup untuk analisis tren (dibutuhkan minimal 3 bulan).", None, None
     
     # Mencegah error jika semua nilai y sama
-    if len(set(data_series.dropna())) == 1:
+    if len(set(data_series.dropna())) <= 1:
         return "Data konstan, tidak ada tren yang bisa dianalisis.", None, None
 
-    x = np.arange(len(data_series))
-    y = data_series.values
+    # Interpolasi untuk mengisi data yang hilang sebelum analisis tren
+    data_series_interpolated = data_series.interpolate(method='linear', limit_direction='both')
+    
+    x = np.arange(len(data_series_interpolated))
+    y = data_series_interpolated.values
     slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
     trendline = slope * x + intercept
 
@@ -147,15 +181,21 @@ elif auth_status:
     st.sidebar.success(f"Login sebagai: {name}")
 
     st.sidebar.title("Filter Data")
-    uploaded_file = st.sidebar.file_uploader("📂 Unggah file Excel atau CSV Anda", type=["xlsx", "xls", "csv"])
+    uploaded_sales_file = st.sidebar.file_uploader("📂 Unggah File Penjualan (Excel/CSV)", type=["xlsx", "xls", "csv"])
+    # TAMBAHAN: File uploader untuk data QC
+    uploaded_qc_file = st.sidebar.file_uploader("⭐ Unggah File QC (Excel)", type=["xlsx", "xls"])
     
-    if uploaded_file is None:
+    if uploaded_sales_file is None:
         st.info("Selamat datang! Silakan unggah file data penjualan Anda untuk memulai analisis.")
         st.stop()
     
-    # 3. Tangkap error dari load_data di sini, di alur utama aplikasi
+    # Tangkap error dari load_data di sini, di alur utama aplikasi
     try:
-        df = load_data(uploaded_file)
+        df = load_sales_data(uploaded_sales_file)
+        df_qc = None # Inisialisasi df_qc sebagai None
+        if uploaded_qc_file:
+            df_qc = load_qc_data(uploaded_qc_file)
+
     except ValueError as e:
         st.error(e)
         st.stop()
@@ -175,7 +215,7 @@ elif auth_status:
     df_filtered = df[(df['Branch'] == selected_branch) & (df['Sales Date'] >= start_date) & (df['Sales Date'] <= end_date)]
     
     if df_filtered.empty:
-        st.warning("Tidak ada data yang ditemukan untuk filter yang Anda pilih.")
+        st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih.")
         st.stop()
 
     # --- Tampilan Dashboard ---
@@ -183,7 +223,7 @@ elif auth_status:
     st.markdown(f"Analisis data dari **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
     st.markdown("---")
 
-    # Agregasi Bulanan
+    # Agregasi Bulanan untuk Penjualan
     monthly_df = df_filtered.copy()
     monthly_df['Bulan'] = pd.to_datetime(monthly_df['Sales Date']).dt.to_period('M')
     monthly_agg = monthly_df.groupby('Bulan').agg(
@@ -192,32 +232,65 @@ elif auth_status:
     ).reset_index()
     if not monthly_agg.empty:
         monthly_agg['AOV'] = monthly_agg.apply(lambda row: row['TotalMonthlySales'] / row['TotalTransactions'] if row['TotalTransactions'] > 0 else 0, axis=1)
-        monthly_agg['Bulan'] = monthly_agg['Bulan'].dt.to_timestamp()
+    
+    # Agregasi dan Penggabungan Data QC jika ada
+    if df_qc is not None:
+        df_qc_filtered = df_qc[(df_qc['Branch'] == selected_branch) & (df_qc['Date'] >= start_date) & (df_qc['Date'] <= end_date)]
+        if not df_qc_filtered.empty:
+            qc_monthly_df = df_qc_filtered.copy()
+            qc_monthly_df['Bulan'] = pd.to_datetime(qc_monthly_df['Date']).dt.to_period('M')
+            qc_monthly_agg = qc_monthly_df.groupby('Bulan').agg(
+                AverageQC=('QC Score', 'mean')
+            ).reset_index()
+            # Gabungkan data QC ke data agregat bulanan
+            monthly_agg = pd.merge(monthly_agg, qc_monthly_agg, on='Bulan', how='left')
 
+    if not monthly_agg.empty:
+        monthly_agg['Bulan'] = monthly_agg['Bulan'].dt.to_timestamp()
+    
     # Tampilan KPI
-    col1, col2, col3 = st.columns(3)
+    # MODIFIKASI: Menambah kolom ke-4 untuk QC
+    kpi_cols = 4 if 'AverageQC' in monthly_agg.columns else 3
+    col1, col2, col3, *col4 = st.columns(kpi_cols) # Gunakan unpacking untuk kolom dinamis
+    
     if len(monthly_agg) >= 2:
         last_month = monthly_agg.iloc[-1]
         prev_month = monthly_agg.iloc[-2]
-        sales_delta = (last_month['TotalMonthlySales'] - prev_month['TotalMonthlySales']) / prev_month['TotalMonthlySales']
-        trx_delta = (last_month['TotalTransactions'] - prev_month['TotalTransactions']) / prev_month['TotalTransactions']
-        aov_delta = (last_month['AOV'] - prev_month['AOV']) / prev_month['AOV']
+        
+        # Kalkulasi delta Penjualan, Transaksi, AOV
+        sales_delta = (last_month['TotalMonthlySales'] - prev_month['TotalMonthlySales']) / prev_month['TotalMonthlySales'] if prev_month['TotalMonthlySales'] > 0 else 0
+        trx_delta = (last_month['TotalTransactions'] - prev_month['TotalTransactions']) / prev_month['TotalTransactions'] if prev_month['TotalTransactions'] > 0 else 0
+        aov_delta = (last_month['AOV'] - prev_month['AOV']) / prev_month['AOV'] if prev_month['AOV'] > 0 else 0
         
         col1.metric("💰 Penjualan Bulan Terakhir", f"Rp {last_month['TotalMonthlySales']:,.0f}", f"{sales_delta:.1%}", help=f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}")
         col2.metric("🛒 Transaksi Bulan Terakhir", f"{last_month['TotalTransactions']:,}", f"{trx_delta:.1%}", help=f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}")
         col3.metric("💳 AOV Bulan Terakhir", f"Rp {last_month['AOV']:,.0f}", f"{aov_delta:.1%}", help=f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}")
+        
+        # Tampilkan metrik QC jika ada
+        if 'AverageQC' in monthly_agg.columns and col4:
+            qc_last = last_month['AverageQC']
+            qc_prev = prev_month['AverageQC']
+            if pd.notna(qc_last) and pd.notna(qc_prev) and qc_prev > 0:
+                qc_delta = (qc_last - qc_prev) / qc_prev
+                col4[0].metric("⭐ Skor QC Bulan Terakhir", f"{qc_last:.2f}", f"{qc_delta:.1%}", help=f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}")
+            elif pd.notna(qc_last):
+                col4[0].metric("⭐ Skor QC Bulan Terakhir", f"{qc_last:.2f}", "Data bulan lalu tidak ada")
+
     elif not monthly_agg.empty:
         last_month = monthly_agg.iloc[-1]
         col1.metric("💰 Penjualan Bulan Terakhir", f"Rp {last_month['TotalMonthlySales']:,.0f}")
         col2.metric("🛒 Transaksi Bulan Terakhir", f"{last_month['TotalTransactions']:,}")
         col3.metric("💳 AOV Bulan Terakhir", f"Rp {last_month['AOV']:,.0f}")
-    
+        if 'AverageQC' in monthly_agg.columns and col4 and pd.notna(last_month['AverageQC']):
+             col4[0].metric("⭐ Skor QC Bulan Terakhir", f"{last_month['AverageQC']:.2f}")
+
     st.markdown("---")
 
     # Tampilan Visualisasi
     col_chart, col_table = st.columns([2, 1])
     with col_chart:
         if not monthly_agg.empty:
+            # --- Grafik Tren Penjualan ---
             st.subheader("Tren Penjualan Bulanan")
             fig_sales = px.line(monthly_agg, x='Bulan', y='TotalMonthlySales', markers=True, labels={'Bulan': 'Bulan', 'TotalMonthlySales': 'Total Penjualan (Rp)'})
             sales_analysis, sales_trendline, sales_p_value = analyze_trend_v2(monthly_agg['TotalMonthlySales'], monthly_agg['Bulan'].dt.strftime('%b %Y'))
@@ -226,15 +299,17 @@ elif auth_status:
             st.plotly_chart(fig_sales, use_container_width=True)
             display_analysis_with_details("Analisis Tren Penjualan", sales_analysis, sales_p_value)
 
+            # --- Grafik Tren Transaksi ---
             st.subheader("Tren Transaksi Bulanan")
             fig_trx = px.line(monthly_agg, x='Bulan', y='TotalTransactions', markers=True, labels={'Bulan': 'Bulan', 'TotalTransactions': 'Jumlah Transaksi'})
             fig_trx.update_traces(line_color='orange')
             trx_analysis, trx_trendline, trx_p_value = analyze_trend_v2(monthly_agg['TotalTransactions'], monthly_agg['Bulan'].dt.strftime('%b %Y'))
             if trx_trendline is not None:
-                fig_trx.add_scatter(x=monthly_agg['Bulan'], y=trx_trendline, mode='lines', name='Gris Tren', line=dict(color='red', dash='dash'))
+                fig_trx.add_scatter(x=monthly_agg['Bulan'], y=trx_trendline, mode='lines', name='Garis Tren', line=dict(color='red', dash='dash'))
             st.plotly_chart(fig_trx, use_container_width=True)
             display_analysis_with_details("Analisis Tren Transaksi", trx_analysis, trx_p_value)
 
+            # --- Grafik Tren AOV ---
             st.subheader("Tren AOV Bulanan")
             fig_aov = px.line(monthly_agg, x='Bulan', y='AOV', markers=True, labels={'Bulan': 'Bulan', 'AOV': 'Average Order Value (Rp)'})
             fig_aov.update_traces(line_color='green')
@@ -243,6 +318,18 @@ elif auth_status:
                 fig_aov.add_scatter(x=monthly_agg['Bulan'], y=aov_trendline, mode='lines', name='Garis Tren', line=dict(color='red', dash='dash'))
             st.plotly_chart(fig_aov, use_container_width=True)
             display_analysis_with_details("Analisis Tren AOV", aov_analysis, aov_p_value)
+
+            # TAMBAHAN: Grafik dan Analisis Tren QC
+            if 'AverageQC' in monthly_agg.columns and monthly_agg['AverageQC'].notna().any():
+                st.subheader("Tren Skor QC Bulanan")
+                fig_qc = px.line(monthly_agg, x='Bulan', y='AverageQC', markers=True, labels={'Bulan': 'Bulan', 'AverageQC': 'Rata-rata Skor QC'})
+                fig_qc.update_traces(line_color='purple')
+                # Menggunakan kolom 'AverageQC' untuk analisis
+                qc_analysis, qc_trendline, qc_p_value = analyze_trend_v2(monthly_agg['AverageQC'], monthly_agg['Bulan'].dt.strftime('%b %Y'))
+                if qc_trendline is not None:
+                    fig_qc.add_scatter(x=monthly_agg['Bulan'], y=qc_trendline, mode='lines', name='Garis Tren', line=dict(color='red', dash='dash'))
+                st.plotly_chart(fig_qc, use_container_width=True)
+                display_analysis_with_details("Analisis Tren Skor QC", qc_analysis, qc_p_value)
         else:
             st.warning("Tidak ada data bulanan untuk divisualisasikan pada rentang waktu ini.")
 
