@@ -12,7 +12,13 @@ import scipy.stats as stats
 # KONFIGURASI HALAMAN & FUNGSI-FUNGSI
 # ==============================================================================
 
-st.set_page_config(page_title="Dashboard Performa Dinamis", layout="wide")
+# Anda juga bisa menambahkan logo sebagai ikon tab browser di sini
+st.set_page_config(
+    page_title="Dashboard Performa Dinamis", 
+    page_icon="📊",  # Contoh menggunakan emoji, bisa juga path file: "logo.png"
+    layout="wide"
+)
+
 
 @st.cache_data
 def load_sales_data(file):
@@ -148,6 +154,17 @@ elif auth_status:
     # ==============================================================================
     # APLIKASI UTAMA (SETELAH LOGIN BERHASIL)
     # ==============================================================================
+
+    # --- TAMBAHAN: Tampilkan Logo di Sidebar ---
+    # Ganti "logo.png" dengan path ke file logo Anda.
+    # Anda bisa mengatur lebar logo dengan parameter 'width'.
+    try:
+        st.sidebar.image("logo.png", width=150)
+    except Exception as e:
+        # Jika file logo tidak ditemukan, tampilkan pesan ini di sidebar.
+        st.sidebar.warning("File logo tidak ditemukan. Pastikan 'logo.png' ada di folder yang sama.")
+
+
     authenticator.logout("Logout", "sidebar")
     st.sidebar.success(f"Login sebagai: **{name}**")
 
