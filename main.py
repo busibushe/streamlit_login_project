@@ -40,6 +40,9 @@ def load_data(file):
         # Proses data
         df['Sales Date'] = pd.to_datetime(df['Sales Date'], errors='coerce').dt.date
         df['Branch'] = df['Branch'].fillna('Tidak Diketahui')
+        st.write("Contoh data Sales Date:", df['Sales Date'].head())
+        st.write("Tipe data Sales Date:", df['Sales Date'].dtype)
+        st.write("Nilai min:", df['Sales Date'].min(), "| max:", df['Sales Date'].max())
         
         numeric_cols = ['Qty', 'Nett Sales', 'Bill Number']
         for col in numeric_cols:
@@ -134,15 +137,9 @@ except ValueError as e:
 # --- UI Filter ---
 unique_branches = sorted(df['Branch'].unique())
 selected_branch = st.sidebar.selectbox("Pilih Cabang", unique_branches)
-min_date = pd.to_datetime(df['Sales Date']).min().date()
-max_date = pd.to_datetime(df['Sales Date']).max().date()
-
-date_range = st.sidebar.date_input(
-    "Pilih Rentang Tanggal",
-    value=(min_date, max_date),
-    min_value=min_date,
-    max_value=max_date
-)
+min_date = df['Sales Date'].min()
+max_date = df['Sales Date'].max()
+date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 
 if len(date_range) != 2: st.warning("Mohon pilih rentang tanggal yang valid."); st.stop()
 start_date, end_date = date_range
