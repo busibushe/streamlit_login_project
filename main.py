@@ -137,16 +137,45 @@ except ValueError as e:
 # --- UI Filter ---
 unique_branches = sorted(df['Branch'].unique())
 selected_branch = st.sidebar.selectbox("Pilih Cabang", unique_branches)
-min_date = pd.to_datetime(df['Sales Date'].min()).date()
-max_date = pd.to_datetime(df['Sales Date'].max()).date()
-date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 
-if len(date_range) != 2: st.warning("Mohon pilih rentang tanggal yang valid."); st.stop()
+# Ambil min dan max date
+min_date_raw = df['Sales Date'].min()
+max_date_raw = df['Sales Date'].max()
+
+# Validasi apakah tanggal valid
+if pd.isna(min_date_raw) or pd.isna(max_date_raw):
+    st.error("Tidak bisa menentukan rentang tanggal karena data tanggal tidak valid atau kosong.")
+    st.stop()
+
+# Konversi ke tipe date (bukan datetime64)
+min_date = pd.to_datetime(min_date_raw).date()
+max_date = pd.to_datetime(max_date_raw).date()
+
+# Tambahkan input rentang tanggal di sidebar
+date_range = st.sidebar.date_input(
+    "Pilih Rentang Tanggal",
+    value=(min_date, max_date),
+    min_value=min_date,
+    max_value=max_date
+)
+
+# Validasi rentang
+if not isinstance(date_range, (list, tuple)) or len(date_range) != 2:
+    st.warning("Mohon pilih rentang tanggal yang valid.")
+    st.stop()
+
 start_date, end_date = date_range
 
 # Filter data penjualan
-df_filtered = df[(df['Branch'] == selected_branch) & (df['Sales Date'] >= start_date) & (df['Sales Date'] <= end_date)]
-if df_filtered.empty: st.warning("Tidak ada data penjualan untuk filter yang Anda pilih."); st.stop()
+df_filtered = df[
+    (df['Branch'] == selected_branch) &
+    (df['Sales Date'] >= start_date) &
+    (df['Sales Date'] <= end_date)
+]
+
+if df_filtered.empty:
+    st.warning("Tidak ada data penjualan untuk filter yang Anda pilih.")
+    st.stop()
 
 # --- Agregasi & Penggabungan Data ---
 monthly_df = df_filtered.copy()
