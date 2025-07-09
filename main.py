@@ -12,13 +12,11 @@ import scipy.stats as stats
 # KONFIGURASI HALAMAN & FUNGSI-FUNGSI
 # ==============================================================================
 
-# Anda juga bisa menambahkan logo sebagai ikon tab browser di sini
 st.set_page_config(
     page_title="Dashboard Performa Dinamis", 
-    page_icon="📊",  # Contoh menggunakan emoji, bisa juga path file: "logo.png"
+    page_icon="📊",
     layout="wide"
 )
-
 
 @st.cache_data
 def load_sales_data(file):
@@ -155,15 +153,12 @@ elif auth_status:
     # APLIKASI UTAMA (SETELAH LOGIN BERHASIL)
     # ==============================================================================
 
-    # --- TAMBAHAN: Tampilkan Logo di Sidebar ---
-    # Ganti "logo.png" dengan path ke file logo Anda.
-    # Anda bisa mengatur lebar logo dengan parameter 'width'.
-    try:
-        st.sidebar.image("logo.png", width=150)
-    except Exception as e:
-        # Jika file logo tidak ditemukan, tampilkan pesan ini di sidebar.
-        st.sidebar.warning("File logo tidak ditemukan. Pastikan 'logo.png' ada di folder yang sama.")
-
+    # --- PERBAIKAN: Cara Stabil Menampilkan Logo ---
+    logo_path = "logo.png"
+    if os.path.exists(logo_path):
+        st.sidebar.image(logo_path, width=150)
+    else:
+        st.sidebar.warning("Logo 'logo.png' tidak ditemukan.")
 
     authenticator.logout("Logout", "sidebar")
     st.sidebar.success(f"Login sebagai: **{name}**")
@@ -229,7 +224,6 @@ elif auth_status:
             add_monthly_df = df_add_filtered.copy()
             add_monthly_df['Bulan'] = pd.to_datetime(add_monthly_df['Date']).dt.to_period('M')
             
-            # Agregasi dinamis untuk semua metrik yang dipilih
             agg_dict = {metric: 'mean' for metric in selected_metrics}
             additional_monthly_agg = add_monthly_df.groupby('Bulan').agg(agg_dict).reset_index()
             
@@ -246,7 +240,6 @@ elif auth_status:
         last_month = monthly_agg.iloc[-1]
         prev_month = monthly_agg.iloc[-2] if len(monthly_agg) >= 2 else None
 
-        # KPI Penjualan, Transaksi, AOV
         def display_kpi(col, title, current_val, prev_val, help_text, is_currency=True):
             delta = (current_val - prev_val) / prev_val if prev_val and prev_val > 0 else 0
             val_format = f"Rp {current_val:,.0f}" if is_currency else f"{current_val:,.0f}"
@@ -257,7 +250,6 @@ elif auth_status:
         display_kpi(kpi_cols[1], "🛒 Transaksi", last_month['TotalTransactions'], prev_month['TotalTransactions'] if prev_month is not None else None, help_str, False)
         display_kpi(kpi_cols[2], "💳 AOV", last_month['AOV'], prev_month['AOV'] if prev_month is not None else None, help_str, True)
         
-        # KPI Dinamis untuk metrik tambahan
         for i, metric in enumerate(selected_metrics):
             if metric in last_month:
                 display_kpi(kpi_cols[3+i], f"⭐ {metric}", last_month[metric], prev_month[metric] if prev_month is not None else None, help_str, False)
@@ -265,6 +257,12 @@ elif auth_status:
     st.markdown("---")
 
     # --- Tampilan Visualisasi Dinamis ---
+    # Menambahkan tabel "Menu Terlaris" sebelum tab visualisasi lainnya
+    with st.expander("📈 Lihat Menu Terlaris", expanded=False):
+        top_menus = df_filtered.groupby('Menu')['Qty'].sum().sort_values(ascending=False).reset_index().head(10)
+        top_menus.index = top_menus.index + 1
+        st.dataframe(top_menus, use_container_width=True)
+    
     tab_titles = ["Penjualan", "Transaksi", "AOV"] + selected_metrics
     tabs = st.tabs([f"**{title}**" for title in tab_titles])
 
@@ -286,10 +284,8 @@ elif auth_status:
         create_trend_chart(tabs[1], monthly_agg, 'TotalTransactions', 'Jumlah Transaksi', 'orange')
         create_trend_chart(tabs[2], monthly_agg, 'AOV', 'Average Order Value (Rp)', 'green')
 
-        # Grafik dinamis untuk metrik tambahan
         for i, metric in enumerate(selected_metrics):
             if metric in monthly_agg.columns and monthly_agg[metric].notna().any():
-                # Pilih warna dari palet agar tidak monoton
                 color_palette = px.colors.qualitative.Vivid
                 color = color_palette[i % len(color_palette)]
                 create_trend_chart(tabs[3+i], monthly_agg, metric, metric, color)
