@@ -182,17 +182,15 @@ elif auth_status:
 
     st.sidebar.title("Filter Data")
     uploaded_sales_file = st.sidebar.file_uploader("📂 Unggah File Penjualan (Excel/CSV)", type=["xlsx", "xls", "csv"])
-    # TAMBAHAN: File uploader untuk data QC
     uploaded_qc_file = st.sidebar.file_uploader("⭐ Unggah File QC (Excel)", type=["xlsx", "xls"])
     
     if uploaded_sales_file is None:
         st.info("Selamat datang! Silakan unggah file data penjualan Anda untuk memulai analisis.")
         st.stop()
     
-    # Tangkap error dari load_data di sini, di alur utama aplikasi
     try:
         df = load_sales_data(uploaded_sales_file)
-        df_qc = None # Inisialisasi df_qc sebagai None
+        df_qc = None 
         if uploaded_qc_file:
             df_qc = load_qc_data(uploaded_qc_file)
 
@@ -242,47 +240,52 @@ elif auth_status:
             qc_monthly_agg = qc_monthly_df.groupby('Bulan').agg(
                 AverageQC=('QC Score', 'mean')
             ).reset_index()
-            # Gabungkan data QC ke data agregat bulanan
             monthly_agg = pd.merge(monthly_agg, qc_monthly_agg, on='Bulan', how='left')
 
     if not monthly_agg.empty:
         monthly_agg['Bulan'] = monthly_agg['Bulan'].dt.to_timestamp()
     
-    # Tampilan KPI
-    # MODIFIKASI: Menambah kolom ke-4 untuk QC
-    kpi_cols = 4 if 'AverageQC' in monthly_agg.columns else 3
-    col1, col2, col3, *col4 = st.columns(kpi_cols) # Gunakan unpacking untuk kolom dinamis
-    
-    if len(monthly_agg) >= 2:
-        last_month = monthly_agg.iloc[-1]
-        prev_month = monthly_agg.iloc[-2]
+    # ==============================================================================
+    # PERBAIKAN: Tampilan KPI dibuat lebih eksplisit untuk stabilitas
+    # ==============================================================================
+    if not monthly_agg.empty:
+        has_qc = 'AverageQC' in monthly_agg.columns
         
-        # Kalkulasi delta Penjualan, Transaksi, AOV
-        sales_delta = (last_month['TotalMonthlySales'] - prev_month['TotalMonthlySales']) / prev_month['TotalMonthlySales'] if prev_month['TotalMonthlySales'] > 0 else 0
-        trx_delta = (last_month['TotalTransactions'] - prev_month['TotalTransactions']) / prev_month['TotalTransactions'] if prev_month['TotalTransactions'] > 0 else 0
-        aov_delta = (last_month['AOV'] - prev_month['AOV']) / prev_month['AOV'] if prev_month['AOV'] > 0 else 0
-        
-        col1.metric("💰 Penjualan Bulan Terakhir", f"Rp {last_month['TotalMonthlySales']:,.0f}", f"{sales_delta:.1%}", help=f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}")
-        col2.metric("🛒 Transaksi Bulan Terakhir", f"{last_month['TotalTransactions']:,}", f"{trx_delta:.1%}", help=f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}")
-        col3.metric("💳 AOV Bulan Terakhir", f"Rp {last_month['AOV']:,.0f}", f"{aov_delta:.1%}", help=f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}")
-        
-        # Tampilkan metrik QC jika ada
-        if 'AverageQC' in monthly_agg.columns and col4:
-            qc_last = last_month['AverageQC']
-            qc_prev = prev_month['AverageQC']
-            if pd.notna(qc_last) and pd.notna(qc_prev) and qc_prev > 0:
-                qc_delta = (qc_last - qc_prev) / qc_prev
-                col4[0].metric("⭐ Skor QC Bulan Terakhir", f"{qc_last:.2f}", f"{qc_delta:.1%}", help=f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}")
-            elif pd.notna(qc_last):
-                col4[0].metric("⭐ Skor QC Bulan Terakhir", f"{qc_last:.2f}", "Data bulan lalu tidak ada")
+        # Definisikan kolom berdasarkan ada atau tidaknya data QC
+        if has_qc:
+            col1, col2, col3, col4 = st.columns(4)
+        else:
+            col1, col2, col3 = st.columns(3)
 
-    elif not monthly_agg.empty:
-        last_month = monthly_agg.iloc[-1]
-        col1.metric("💰 Penjualan Bulan Terakhir", f"Rp {last_month['TotalMonthlySales']:,.0f}")
-        col2.metric("🛒 Transaksi Bulan Terakhir", f"{last_month['TotalTransactions']:,}")
-        col3.metric("💳 AOV Bulan Terakhir", f"Rp {last_month['AOV']:,.0f}")
-        if 'AverageQC' in monthly_agg.columns and col4 and pd.notna(last_month['AverageQC']):
-             col4[0].metric("⭐ Skor QC Bulan Terakhir", f"{last_month['AverageQC']:.2f}")
+        # Logika untuk menampilkan metrik
+        if len(monthly_agg) >= 2:
+            last_month = monthly_agg.iloc[-1]
+            prev_month = monthly_agg.iloc[-2]
+            
+            sales_delta = (last_month['TotalMonthlySales'] - prev_month['TotalMonthlySales']) / prev_month['TotalMonthlySales'] if prev_month['TotalMonthlySales'] > 0 else 0
+            trx_delta = (last_month['TotalTransactions'] - prev_month['TotalTransactions']) / prev_month['TotalTransactions'] if prev_month['TotalTransactions'] > 0 else 0
+            aov_delta = (last_month['AOV'] - prev_month['AOV']) / prev_month['AOV'] if prev_month['AOV'] > 0 else 0
+            
+            col1.metric("💰 Penjualan Bulan Terakhir", f"Rp {last_month['TotalMonthlySales']:,.0f}", f"{sales_delta:.1%}", help=f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}")
+            col2.metric("🛒 Transaksi Bulan Terakhir", f"{last_month['TotalTransactions']:,}", f"{trx_delta:.1%}", help=f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}")
+            col3.metric("💳 AOV Bulan Terakhir", f"Rp {last_month['AOV']:,.0f}", f"{aov_delta:.1%}", help=f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}")
+            
+            if has_qc:
+                qc_last = last_month['AverageQC']
+                qc_prev = prev_month['AverageQC']
+                if pd.notna(qc_last) and pd.notna(qc_prev) and qc_prev > 0:
+                    qc_delta = (qc_last - qc_prev) / qc_prev
+                    col4.metric("⭐ Skor QC Bulan Terakhir", f"{qc_last:.2f}", f"{qc_delta:.1%}", help=f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}")
+                elif pd.notna(qc_last):
+                    col4.metric("⭐ Skor QC Bulan Terakhir", f"{qc_last:.2f}", "Data bulan lalu tidak ada")
+
+        else: # Hanya ada data 1 bulan
+            last_month = monthly_agg.iloc[-1]
+            col1.metric("💰 Penjualan Bulan Terakhir", f"Rp {last_month['TotalMonthlySales']:,.0f}")
+            col2.metric("🛒 Transaksi Bulan Terakhir", f"{last_month['TotalTransactions']:,}")
+            col3.metric("💳 AOV Bulan Terakhir", f"Rp {last_month['AOV']:,.0f}")
+            if has_qc and pd.notna(last_month['AverageQC']):
+                 col4.metric("⭐ Skor QC Bulan Terakhir", f"{last_month['AverageQC']:.2f}")
 
     st.markdown("---")
 
@@ -324,7 +327,6 @@ elif auth_status:
                 st.subheader("Tren Skor QC Bulanan")
                 fig_qc = px.line(monthly_agg, x='Bulan', y='AverageQC', markers=True, labels={'Bulan': 'Bulan', 'AverageQC': 'Rata-rata Skor QC'})
                 fig_qc.update_traces(line_color='purple')
-                # Menggunakan kolom 'AverageQC' untuk analisis
                 qc_analysis, qc_trendline, qc_p_value = analyze_trend_v2(monthly_agg['AverageQC'], monthly_agg['Bulan'].dt.strftime('%b %Y'))
                 if qc_trendline is not None:
                     fig_qc.add_scatter(x=monthly_agg['Bulan'], y=qc_trendline, mode='lines', name='Garis Tren', line=dict(color='red', dash='dash'))
