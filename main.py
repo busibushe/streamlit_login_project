@@ -48,6 +48,7 @@ def display_analysis_with_details_v3(title, analysis_result):
 # FUNGSI-FUNGSI BARU UNTUK DASBOR OPERASIONAL
 # ==============================================================================
 
+# Ganti fungsi create_channel_analysis yang lama dengan ini
 def create_channel_analysis(df):
     st.subheader("📊 Analisis Saluran Penjualan (Channel)")
     if 'Visit Purpose' not in df.columns:
@@ -63,7 +64,15 @@ def create_channel_analysis(df):
         st.plotly_chart(fig, use_container_width=True)
 
     with col2:
-        aov_by_channel = df.groupby('Visit Purpose').apply(lambda x: x['Nett Sales'].sum() / x['Bill Number'].nunique()).sort_values(ascending=False)
+        # --- PERBAIKAN: Menghilangkan FutureWarning ---
+        agg_data = df.groupby('Visit Purpose').agg(
+            TotalSales=('Nett Sales', 'sum'),
+            TotalBills=('Bill Number', 'nunique')
+        )
+        agg_data['AOV'] = agg_data['TotalSales'] / agg_data['TotalBills']
+        aov_by_channel = agg_data['AOV'].sort_values(ascending=False)
+        # --- Akhir Perbaikan ---
+        
         fig2 = px.bar(aov_by_channel, y=aov_by_channel.index, x=aov_by_channel.values, orientation='h', 
                       labels={'x': 'Rata-rata Nilai Pesanan (AOV)', 'y': 'Saluran'}, title="AOV per Saluran Penjualan")
         st.plotly_chart(fig2, use_container_width=True)
@@ -202,34 +211,35 @@ elif auth_status:
             user_selection = st.selectbox(f"**{description}**:", options=all_cols, index=(all_cols.index(best_guess) if best_guess else 0), key=f"map_opt_{internal_name}")
             if user_selection: user_mapping[internal_name] = user_selection
 
-    # Blok kode yang sudah diperbaiki
+    # --- PERBAIKAN: Ganti seluruh isi blok 'if st.sidebar.button' dengan ini ---
     if st.sidebar.button("✅ Terapkan dan Proses Data", type="primary"):
-        # Validasi: Pastikan semua kolom wajib telah dipetakan
-        # Mengambil nilai dari user_mapping yang sudah dibuat di atas
+        # Validasi 1: Pastikan semua kolom wajib telah dipetakan
         mapped_req_cols = [user_mapping.get(internal_name) for internal_name in REQUIRED_COLS_MAP.keys()]
         if not all(mapped_req_cols):
             st.error("❌ Harap petakan semua kolom WAJIB diisi sebelum memproses data.")
             st.stop()
         
-        # --- MULAI: Logika pemrosesan yang hilang dikembalikan ---
-        try:
-            # Gabungkan pemetaan wajib dan opsional
-            # (user_mapping sudah berisi semua pilihan dari sidebar)
-            rename_dict = {v: k for k, v in user_mapping.items() if v} # Hanya rename yang dipilih pengguna
-            
-            # Buat DataFrame 'df' dengan me-rename 'df_raw'
-            df = df_raw.rename(columns=rename_dict)
-            
-            # Validasi ulang setelah rename
-            for col in REQUIRED_COLS_MAP.keys():
-                if col not in df.columns:
-                    raise ValueError(f"Kolom internal '{col}' tidak terbentuk. Periksa kembali pemetaan Anda.")
+        # Validasi 2: Pastikan pengguna tidak memilih kolom yang sama untuk peran yang berbeda
+        # Ini mencegah error dan kebingungan data
+        chosen_cols = [col for col in user_mapping.values() if col]
+        if len(chosen_cols) != len(set(chosen_cols)):
+            st.error("❌ Terdeteksi satu kolom dipilih untuk beberapa peran berbeda. Harap periksa kembali pemetaan Anda.")
+            st.stop()
 
-            # Lanjutkan proses pembersihan data pada 'df'
+        try:
+            # --- LOGIKA BARU YANG LEBIH AMAN ---
+            # Membuat DataFrame baru yang bersih, bukan me-rename.
+            # Ini mencegah duplikasi nama kolom secara otomatis.
+            
+            df = pd.DataFrame()
+            for internal_name, source_col in user_mapping.items():
+                if source_col: # Hanya proses jika pengguna memilih kolom
+                    df[internal_name] = df_raw[source_col]
+
+            # Lanjutkan proses pembersihan data pada 'df' yang sudah dijamin bersih
             df['Sales Date'] = pd.to_datetime(df['Sales Date']).dt.date
             df['Branch'] = df['Branch'].fillna('Tidak Diketahui')
             
-            # Proses semua kolom numerik yang dibutuhkan
             numeric_cols = ['Qty', 'Nett Sales'] 
             for col in numeric_cols:
                 if col in df.columns and df[col].dtype == 'object':
@@ -240,8 +250,9 @@ elif auth_status:
                 df['Sales Date In'] = pd.to_datetime(df['Sales Date In'], errors='coerce')
             if 'Sales Date Out' in df.columns:
                 df['Sales Date Out'] = pd.to_datetime(df['Sales Date Out'], errors='coerce')
+            # Penanganan khusus untuk 'Order Time' yang bisa berupa objek waktu atau datetime
             if 'Order Time' in df.columns:
-                df['Order Time'] = pd.to_datetime(df['Order Time'], format='%H:%M:%S', errors='coerce').dt.time
+                df['Order Time'] = pd.to_datetime(df['Order Time'], errors='coerce').dt.time
 
             df.fillna(0, inplace=True)
 
