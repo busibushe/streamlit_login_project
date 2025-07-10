@@ -108,7 +108,6 @@ def create_channel_analysis(df):
 def create_menu_engineering_chart(df):
     st.subheader("🔬 Analisis Performa Menu (Menu Engineering)")
     
-    # Kelompokkan data menu
     menu_perf = df.groupby('Menu').agg(
         Qty=('Qty', 'sum'),
         NettSales=('Nett Sales', 'sum')
@@ -121,26 +120,23 @@ def create_menu_engineering_chart(df):
     avg_qty = menu_perf['Qty'].mean()
     avg_sales = menu_perf['NettSales'].mean()
 
-    # --- PERBAIKAN UTAMA: Buat logika kondisional untuk label teks ---
-    # Tentukan apakah akan menampilkan label teks berdasarkan jumlah item menu
-    show_text = len(menu_perf) < 75 # Tampilkan label jika item < 75
-    text_arg = 'Menu' if show_text else None # Jika terlalu banyak, jangan berikan argumen teks
+    show_text = len(menu_perf) < 75 
+    text_arg = 'Menu' if show_text else None
 
     fig = px.scatter(menu_perf, x='Qty', y='NettSales', 
-                     text=text_arg,  # Gunakan argumen kondisional di sini
+                     text=text_arg,
                      title="Kuadran Performa Menu",
                      labels={'Qty': 'Total Kuantitas Terjual', 'NettSales': 'Total Penjualan Bersih (Rp)'},
                      size='NettSales', color='NettSales', hover_name='Menu',
-                     hover_data={'Qty': True, 'NettSales': ':.0f'}) # Format hover data
+                     hover_data={'Qty': True, 'NettSales': ':.0f'})
     
     fig.add_vline(x=avg_qty, line_dash="dash", line_color="gray", annotation_text="Rata-rata Qty")
     fig.add_hline(y=avg_sales, line_dash="dash", line_color="gray", annotation_text="Rata-rata Sales")
     
-    # Hanya jalankan update_traces jika teks ditampilkan
     if show_text:
-        fig.update_traces(textposition='top_center')
+        # --- PERBAIKAN UTAMA: Gunakan selector untuk menargetkan trace yang benar ---
+        fig.update_traces(selector=dict(type='scatter'), textposition='top_center')
     else:
-        # Beri peringatan kepada pengguna jika label disembunyikan
         st.warning("⚠️ Terlalu banyak item menu untuk menampilkan semua label. Arahkan mouse ke titik untuk melihat detail menu.")
 
     st.plotly_chart(fig, use_container_width=True)
@@ -151,7 +147,7 @@ def create_menu_engineering_chart(df):
     - **Kiri Atas (PUZZLES 🤔):** Sangat profit tapi jarang dipesan. **Latih staf untuk merekomendasikan.**
     - **Kiri Bawah (DOGS 🐶):** Kurang populer & profit. **Pertimbangkan untuk menghapus dari menu.**
     """)
-    
+
 def create_operational_efficiency_analysis(df):
     """Membuat visualisasi untuk analisis efisiensi operasional."""
     st.subheader("⏱️ Analisis Efisiensi Operasional")
