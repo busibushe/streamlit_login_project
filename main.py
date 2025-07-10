@@ -220,41 +220,48 @@ elif auth_status:
             st.stop()
         
         # Validasi 2: Pastikan pengguna tidak memilih kolom yang sama untuk peran yang berbeda
-        # Ini mencegah error dan kebingungan data
         chosen_cols = [col for col in user_mapping.values() if col]
         if len(chosen_cols) != len(set(chosen_cols)):
             st.error("❌ Terdeteksi satu kolom dipilih untuk beberapa peran berbeda. Harap periksa kembali pemetaan Anda.")
             st.stop()
 
         try:
-            # --- LOGIKA BARU YANG LEBIH AMAN ---
             # Membuat DataFrame baru yang bersih, bukan me-rename.
-            # Ini mencegah duplikasi nama kolom secara otomatis.
-            
             df = pd.DataFrame()
             for internal_name, source_col in user_mapping.items():
-                if source_col: # Hanya proses jika pengguna memilih kolom
+                if source_col: 
                     df[internal_name] = df_raw[source_col]
 
-            # Lanjutkan proses pembersihan data pada 'df' yang sudah dijamin bersih
-            df['Sales Date'] = pd.to_datetime(df['Sales Date']).dt.date
-            df['Branch'] = df['Branch'].fillna('Tidak Diketahui')
+            # --- LOGIKA PEMBERSIHAN DATA YANG DISEMPURNAKAN ---
             
-            numeric_cols = ['Qty', 'Nett Sales'] 
-            for col in numeric_cols:
-                if col in df.columns and df[col].dtype == 'object':
-                    df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '', regex=False), errors='coerce')
-            
-            # Proses kolom opsional jika ada
+            # 1. Proses Kolom Teks (String)
+            # Pastikan kolom Menu dan Branch adalah string dan isi nilai kosong dengan teks.
+            df['Menu'] = df['Menu'].fillna('N/A').astype(str) # N/A = Not Available
+            df['Branch'] = df['Branch'].fillna('Tidak Diketahui').astype(str)
+            if 'Visit Purpose' in df.columns:
+                df['Visit Purpose'] = df['Visit Purpose'].fillna('N/A').astype(str)
+            if 'Payment Method' in df.columns:
+                df['Payment Method'] = df['Payment Method'].fillna('N/A').astype(str)
+
+            # 2. Proses Kolom Tanggal & Waktu
+            df['Sales Date'] = pd.to_datetime(df['Sales Date'], errors='coerce')
             if 'Sales Date In' in df.columns:
                 df['Sales Date In'] = pd.to_datetime(df['Sales Date In'], errors='coerce')
             if 'Sales Date Out' in df.columns:
                 df['Sales Date Out'] = pd.to_datetime(df['Sales Date Out'], errors='coerce')
-            # Penanganan khusus untuk 'Order Time' yang bisa berupa objek waktu atau datetime
             if 'Order Time' in df.columns:
-                df['Order Time'] = pd.to_datetime(df['Order Time'], errors='coerce').dt.time
+                # Coba konversi ke time, jika gagal biarkan NaT (Not a Time)
+                df['Order Time'] = pd.to_datetime(df['Order Time'], format='%H:%M:%S', errors='coerce').dt.time
 
-            df.fillna(0, inplace=True)
+            # 3. Proses Kolom Numerik
+            # Isi nilai kosong HANYA untuk kolom numerik dengan 0.
+            numeric_cols = ['Qty', 'Nett Sales'] 
+            for col in numeric_cols:
+                if col in df.columns:
+                    # Ubah ke numerik (memaksa error menjadi NaN), lalu isi NaN dengan 0
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            
+            # HAPUS .fillna(0) GLOBAL YANG SEBELUMNYA ADA
 
             # Simpan DataFrame yang sudah jadi ke session_state
             st.session_state.df_processed = df 
@@ -263,7 +270,7 @@ elif auth_status:
 
         except Exception as e:
             st.error(f"❌ Terjadi kesalahan saat memproses data: {e}")
-            st.stop()
+            st.stop()    
         # --- SELESAI: Akhir dari logika yang dikembalikan ---
 
     # ==============================================================================
