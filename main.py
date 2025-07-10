@@ -182,12 +182,17 @@ elif auth_status:
         return None
 
     # Pemetaan kolom Wajib
-    with st.sidebar.expander("Atur Pemetaan Kolom Wajib", expanded=not st.session_state.data_processed):
+    with st.sidebar.expander("Atur Pemetaan Kolom Penjualan", expanded=not st.session_state.data_processed):
         all_cols = [""] + df_raw.columns.tolist()
         for internal_name, description in REQUIRED_COLS_MAP.items():
-            # ... (logika tebak otomatis sama seperti sebelumnya) ...
-            best_guess = find_best_match(all_cols, [internal_name.lower().replace("_", "").replace(" ","")])
-            user_selection = st.selectbox(f"**{description}**:", options=all_cols, index=(all_cols.index(best_guess) if best_guess else 0), key=f"map_req_{internal_name}")
+            keywords = [internal_name.lower().replace("_", "").replace(" ","")]
+            if internal_name == 'Sales Date': keywords.extend(['tanggal', 'date', 'waktu'])
+            if internal_name == 'Branch': keywords.extend(['cabang', 'outlet'])
+            if internal_name == 'Bill Number': keywords.extend(['bill', 'struk', 'invoice', 'nomor'])
+            if internal_name == 'Nett Sales': keywords.extend(['nett', 'bersih'])
+            best_guess = find_best_match(all_cols, keywords)
+            default_index = all_cols.index(best_guess) if best_guess else 0
+            user_selection = st.selectbox(f"**{description}**:", options=all_cols, index=default_index, key=f"map_{internal_name}")
             if user_selection: user_mapping[internal_name] = user_selection
     
     # Pemetaan kolom Opsional
@@ -197,11 +202,58 @@ elif auth_status:
             user_selection = st.selectbox(f"**{description}**:", options=all_cols, index=(all_cols.index(best_guess) if best_guess else 0), key=f"map_opt_{internal_name}")
             if user_selection: user_mapping[internal_name] = user_selection
 
+    # Blok kode yang sudah diperbaiki
     if st.sidebar.button("✅ Terapkan dan Proses Data", type="primary"):
-        # ... (Logika pemrosesan sama seperti sebelumnya) ...
-        st.session_state.df_processed = df # Simpan dataframe yang sudah diproses
-        st.session_state.data_processed = True
-        st.rerun()
+        # Validasi: Pastikan semua kolom wajib telah dipetakan
+        # Mengambil nilai dari user_mapping yang sudah dibuat di atas
+        mapped_req_cols = [user_mapping.get(internal_name) for internal_name in REQUIRED_COLS_MAP.keys()]
+        if not all(mapped_req_cols):
+            st.error("❌ Harap petakan semua kolom WAJIB diisi sebelum memproses data.")
+            st.stop()
+        
+        # --- MULAI: Logika pemrosesan yang hilang dikembalikan ---
+        try:
+            # Gabungkan pemetaan wajib dan opsional
+            # (user_mapping sudah berisi semua pilihan dari sidebar)
+            rename_dict = {v: k for k, v in user_mapping.items() if v} # Hanya rename yang dipilih pengguna
+            
+            # Buat DataFrame 'df' dengan me-rename 'df_raw'
+            df = df_raw.rename(columns=rename_dict)
+            
+            # Validasi ulang setelah rename
+            for col in REQUIRED_COLS_MAP.keys():
+                if col not in df.columns:
+                    raise ValueError(f"Kolom internal '{col}' tidak terbentuk. Periksa kembali pemetaan Anda.")
+
+            # Lanjutkan proses pembersihan data pada 'df'
+            df['Sales Date'] = pd.to_datetime(df['Sales Date']).dt.date
+            df['Branch'] = df['Branch'].fillna('Tidak Diketahui')
+            
+            # Proses semua kolom numerik yang dibutuhkan
+            numeric_cols = ['Qty', 'Nett Sales'] 
+            for col in numeric_cols:
+                if col in df.columns and df[col].dtype == 'object':
+                    df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '', regex=False), errors='coerce')
+            
+            # Proses kolom opsional jika ada
+            if 'Sales Date In' in df.columns:
+                df['Sales Date In'] = pd.to_datetime(df['Sales Date In'], errors='coerce')
+            if 'Sales Date Out' in df.columns:
+                df['Sales Date Out'] = pd.to_datetime(df['Sales Date Out'], errors='coerce')
+            if 'Order Time' in df.columns:
+                df['Order Time'] = pd.to_datetime(df['Order Time'], format='%H:%M:%S', errors='coerce').dt.time
+
+            df.fillna(0, inplace=True)
+
+            # Simpan DataFrame yang sudah jadi ke session_state
+            st.session_state.df_processed = df 
+            st.session_state.data_processed = True
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ Terjadi kesalahan saat memproses data: {e}")
+            st.stop()
+        # --- SELESAI: Akhir dari logika yang dikembalikan ---
 
     # ==============================================================================
     # BAGIAN UTAMA DASBOR (Tampil setelah data diproses)
