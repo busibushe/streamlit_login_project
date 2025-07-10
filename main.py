@@ -178,8 +178,54 @@ elif auth_status:
             if user_selection: user_mapping[internal_name] = user_selection
 
     if st.sidebar.button("✅ Terapkan dan Proses Data", type="primary"):
-        # (Logika validasi dan pemrosesan data di sini)
-        st.rerun()
+        # Validasi 1: Pastikan semua kolom wajib telah dipetakan
+        mapped_req_cols = [user_mapping.get(internal_name) for internal_name in REQUIRED_COLS_MAP.keys()]
+        if not all(mapped_req_cols):
+            st.error("❌ Harap petakan semua kolom WAJIB diisi sebelum memproses data.")
+            st.stop()
+        
+        # Validasi 2: Pastikan pengguna tidak memilih kolom yang sama untuk peran yang berbeda
+        chosen_cols = [col for col in user_mapping.values() if col]
+        if len(chosen_cols) != len(set(chosen_cols)):
+            st.error("❌ Terdeteksi satu kolom dipilih untuk beberapa peran berbeda. Harap periksa kembali pemetaan Anda.")
+            st.stop()
+
+        try:
+            # --- MULAI: Logika pemrosesan yang hilang ---
+            # Membuat DataFrame baru yang bersih, bukan me-rename.
+            df = pd.DataFrame()
+            for internal_name, source_col in user_mapping.items():
+                if source_col: 
+                    df[internal_name] = df_raw[source_col]
+
+            # 1. Proses Kolom Teks (String)
+            df['Menu'] = df['Menu'].fillna('N/A').astype(str)
+            df['Branch'] = df['Branch'].fillna('Tidak Diketahui').astype(str)
+            if 'Visit Purpose' in df.columns: df['Visit Purpose'] = df['Visit Purpose'].fillna('N/A').astype(str)
+            if 'Payment Method' in df.columns: df['Payment Method'] = df['Payment Method'].fillna('N/A').astype(str)
+
+            # 2. Proses Kolom Tanggal & Waktu
+            df['Sales Date'] = pd.to_datetime(df['Sales Date'], errors='coerce')
+            if 'Sales Date In' in df.columns: df['Sales Date In'] = pd.to_datetime(df['Sales Date In'], errors='coerce')
+            if 'Sales Date Out' in df.columns: df['Sales Date Out'] = pd.to_datetime(df['Sales Date Out'], errors='coerce')
+            if 'Order Time' in df.columns:
+                # Coba konversi ke time, jika gagal biarkan NaT (Not a Time)
+                df['Order Time'] = pd.to_datetime(df['Order Time'], errors='coerce').dt.time
+            
+            # 3. Proses Kolom Numerik
+            numeric_cols = ['Qty', 'Nett Sales'] 
+            for col in numeric_cols:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            
+            # Simpan DataFrame yang sudah jadi dan set status menjadi 'telah diproses'
+            st.session_state.df_processed = df 
+            st.session_state.data_processed = True
+            st.rerun() # Jalankan ulang skrip untuk menampilkan dasbor
+
+        except Exception as e:
+            st.error(f"❌ Terjadi kesalahan saat memproses data: {e}")
+            st.stop()
 
     # ==============================================================================
     # BAGIAN UTAMA DASBOR (Tampil setelah data diproses)
