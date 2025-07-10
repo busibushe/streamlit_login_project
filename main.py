@@ -85,25 +85,61 @@ def create_channel_analysis(df):
         fig2 = px.bar(aov_by_channel, y=aov_by_channel.index, x=aov_by_channel.values, orientation='h', labels={'x': 'AOV (Rp)', 'y': 'Saluran'}, title="AOV per Saluran")
         st.plotly_chart(fig2, use_container_width=True)
 
+# GANTI seluruh fungsi create_menu_engineering_chart yang lama dengan versi FINAL ini
 def create_menu_engineering_chart(df):
     st.subheader("🔬 Analisis Performa Menu (Menu Engineering)")
-    menu_perf = df.groupby('Menu').agg(Qty=('Qty', 'sum'), NettSales=('Nett Sales', 'sum')).reset_index()
-    if len(menu_perf) < 2: return st.warning("Data menu tidak cukup untuk analisis.")
-    avg_qty, avg_sales = menu_perf['Qty'].mean(), menu_perf['NettSales'].mean()
-    show_text = len(menu_perf) < 75
-    text_arg = 'Menu' if show_text else None
-    fig = px.scatter(menu_perf, x='Qty', y='NettSales', text=text_arg, title="Kuadran Performa Menu", labels={'Qty': 'Total Kuantitas', 'NettSales': 'Total Penjualan (Rp)'}, size='NettSales', color='NettSales', hover_name='Menu')
-    fig.add_vline(x=avg_qty, line_dash="dash", line_color="gray")
-    fig.add_hline(y=avg_sales, line_dash="dash", line_color="gray")
-    if show_text: fig.update_traces(selector=dict(type='scatter'), textposition='top_center')
-    else: st.warning("⚠️ Label nama menu disembunyikan karena jumlahnya terlalu banyak. Arahkan mouse ke titik untuk detail.")
-    st.plotly_chart(fig, use_container_width=True)
-    st.info("""**Cara Membaca Kuadran:**
-- **Kanan Atas (STARS 🌟):** Juara Anda! Populer & profit. **Promosikan!**
-- **Kanan Bawah (WORKHORSES 🐴):** Populer, profit kurang. **Naikkan harga / buat bundling.**
-- **Kiri Atas (PUZZLES 🤔):** Sangat profit, jarang dipesan. **Latih staf / beri diskon coba.**
-- **Kiri Bawah (DOGS 🐶):** Kurang populer & profit. **Pertimbangkan untuk hapus.**""")
+    
+    # 1. Agregasi data menu
+    menu_perf = df.groupby('Menu').agg(
+        Qty=('Qty', 'sum'),
+        NettSales=('Nett Sales', 'sum')
+    ).reset_index()
 
+    if len(menu_perf) < 2:
+        st.warning("Data menu tidak cukup untuk analisis engineering.")
+        return
+
+    # 2. Hitung rata-rata untuk garis kuadran
+    avg_qty = menu_perf['Qty'].mean()
+    avg_sales = menu_perf['NettSales'].mean()
+    
+    # 3. Buat scatter plot dasar tanpa argumen 'text'
+    fig = px.scatter(menu_perf, x='Qty', y='NettSales',
+                     title="Kuadran Performa Menu",
+                     labels={'Qty': 'Total Kuantitas Terjual', 'NettSales': 'Total Penjualan Bersih (Rp)'},
+                     size='NettSales', color='NettSales', hover_name='Menu',
+                     custom_data=['Menu']) # Simpan nama menu di custom_data
+
+    # 4. Tambahkan garis kuadran
+    fig.add_vline(x=avg_qty, line_dash="dash", line_color="gray", annotation_text="Rata-rata Qty")
+    fig.add_hline(y=avg_sales, line_dash="dash", line_color="gray", annotation_text="Rata-rata Sales")
+
+    # 5. --- PERBAIKAN FINAL: Atur tampilan teks secara eksplisit ---
+    # Tentukan apakah akan menampilkan label teks berdasarkan jumlah item menu
+    show_text = len(menu_perf) < 75 
+    if show_text:
+        # Gunakan texttemplate untuk menampilkan data dari custom_data
+        # Ini adalah cara paling stabil untuk menambahkan label teks
+        fig.update_traces(
+            texttemplate='%{customdata[0]}', # Ambil data dari custom_data indeks ke-0
+            textposition='top_center',
+            selector=dict(type='scatter') # Pastikan hanya berlaku untuk scatter plot
+        )
+    else:
+        st.warning("⚠️ Terlalu banyak item menu untuk menampilkan semua label. Arahkan mouse ke titik untuk melihat detail menu.")
+        
+    # Atur agar teks tidak tumpang tindih
+    fig.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
+
+    st.plotly_chart(fig, use_container_width=True)
+    st.info("""
+    **Cara Membaca Kuadran:**
+    - **Kanan Atas (STARS 🌟):** Juara Anda! Populer dan menguntungkan. **Promosikan!**
+    - **Kanan Bawah (WORKHORSES 🐴):** Populer tapi kurang profit. **Naikkan harga atau buat paket bundling.**
+    - **Kiri Atas (PUZZLES 🤔):** Sangat profit tapi jarang dipesan. **Latih staf untuk merekomendasikan.**
+    - **Kiri Bawah (DOGS 🐶):** Kurang populer & profit. **Pertimbangkan untuk menghapus dari menu.**
+    """)
+    
 def create_operational_efficiency_analysis(df):
     st.subheader("⏱️ Analisis Efisiensi Operasional")
     required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time']
