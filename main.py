@@ -103,33 +103,34 @@ def create_menu_engineering_chart(df):
     avg_qty = menu_perf['Qty'].mean()
     avg_sales = menu_perf['NettSales'].mean()
     
-    # 3. Buat scatter plot dasar tanpa argumen 'text'
-    fig = px.scatter(menu_perf, x='Qty', y='NettSales',
+    # 3. Tentukan apakah akan menampilkan label teks
+    show_text = len(menu_perf) < 75 
+    text_arg = menu_perf['Menu'] if show_text else None
+
+    # 4. Buat scatter plot dasar
+    fig = px.scatter(menu_perf, x='Qty', y='NettSales', 
+                     text=text_arg,  # Berikan data teks secara langsung
                      title="Kuadran Performa Menu",
                      labels={'Qty': 'Total Kuantitas Terjual', 'NettSales': 'Total Penjualan Bersih (Rp)'},
                      size='NettSales', color='NettSales', hover_name='Menu',
-                     custom_data=['Menu']) # Simpan nama menu di custom_data
+                     hover_data={'Qty': True, 'NettSales': ':.0f'})
 
-    # 4. Tambahkan garis kuadran
+    # 5. Tambahkan garis kuadran
     fig.add_vline(x=avg_qty, line_dash="dash", line_color="gray", annotation_text="Rata-rata Qty")
     fig.add_hline(y=avg_sales, line_dash="dash", line_color="gray", annotation_text="Rata-rata Sales")
 
-    # 5. --- PERBAIKAN FINAL: Atur tampilan teks secara eksplisit ---
-    # Tentukan apakah akan menampilkan label teks berdasarkan jumlah item menu
-    show_text = len(menu_perf) < 75 
+    # 6. --- PERBAIKAN FINAL: Atur teks melalui update_layout ---
     if show_text:
-        # Gunakan texttemplate untuk menampilkan data dari custom_data
-        # Ini adalah cara paling stabil untuk menambahkan label teks
-        fig.update_traces(
-            texttemplate='%{customdata[0]}', # Ambil data dari custom_data indeks ke-0
-            textposition='top_center',
-            selector=dict(type='scatter') # Pastikan hanya berlaku untuk scatter plot
+        # Cara paling stabil: atur mode dan posisi teks untuk seluruh layout
+        fig.update_layout(
+            uniformtext_minsize=8, 
+            uniformtext_mode='hide',
+            scattermode='group' # Opsi tambahan untuk stabilitas
         )
+        # Atur posisi teks secara terpisah setelah layout diupdate
+        fig.update_traces(textposition='top center')
     else:
         st.warning("⚠️ Terlalu banyak item menu untuk menampilkan semua label. Arahkan mouse ke titik untuk melihat detail menu.")
-        
-    # Atur agar teks tidak tumpang tindih
-    fig.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
 
     st.plotly_chart(fig, use_container_width=True)
     st.info("""
@@ -139,7 +140,7 @@ def create_menu_engineering_chart(df):
     - **Kiri Atas (PUZZLES 🤔):** Sangat profit tapi jarang dipesan. **Latih staf untuk merekomendasikan.**
     - **Kiri Bawah (DOGS 🐶):** Kurang populer & profit. **Pertimbangkan untuk menghapus dari menu.**
     """)
-    
+       
 def create_operational_efficiency_analysis(df):
     st.subheader("⏱️ Analisis Efisiensi Operasional")
     required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time']
