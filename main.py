@@ -223,7 +223,7 @@ def create_operational_efficiency_analysis(df):
             
             **Rekomendasi Aksi:** Jika jam layanan melambat **sama atau berdekatan** dengan jam puncak pengunjung, ini adalah sinyal kuat bahwa dapur Anda kewalahan. Pertimbangkan untuk menambah staf atau menyederhanakan menu pada jam-jam krusial tersebut untuk menjaga kepuasan pelanggan.
             """)
-            
+
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
 # ==============================================================================
@@ -370,28 +370,57 @@ elif auth_status:
             ).reset_index()
             monthly_agg['AOV'] = monthly_agg.apply(lambda row: row['TotalMonthlySales'] / row['TotalTransactions'] if row['TotalTransactions'] > 0 else 0, axis=1)
 
+            # --- GANTI SELURUH BLOK KPI DI DALAM 'with trend_tab:' DENGAN INI ---
             if not monthly_agg.empty:
                 monthly_agg['Bulan'] = monthly_agg['Bulan'].dt.to_timestamp()
                 monthly_agg.fillna(0, inplace=True)
 
                 kpi_cols = st.columns(3)
                 last_month = monthly_agg.iloc[-1]
+                # Tentukan prev_month dengan cara yang aman
                 prev_month = monthly_agg.iloc[-2] if len(monthly_agg) >= 2 else None
-                help_str = f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}" if prev_month is not None else ""
 
                 def display_kpi(col, title, current_val, prev_val, help_text, is_currency=True):
+                    """Fungsi helper yang lebih tangguh untuk menampilkan metrik KPI."""
                     if pd.isna(current_val):
                         col.metric(title, "N/A"); return
-                    delta = (current_val - prev_val) / prev_val if prev_val and prev_val > 0 and pd.notna(prev_val) else 0
+                    
+                    delta = 0
+                    # Pengecekan 'is not None' untuk menghindari ambiguitas
+                    if prev_val is not None and pd.notna(prev_val) and prev_val > 0:
+                        delta = (current_val - prev_val) / prev_val
+                    
                     val_format = f"Rp {current_val:,.0f}" if is_currency else f"{current_val:,.2f}".rstrip('0').rstrip('.')
-                    delta_display = f"{delta:.1%}" if prev_val and pd.notna(prev_val) else None
-                    col.metric(title, val_format, delta_display, help=help_text if prev_val else None)
+                    delta_display = f"{delta:.1%}" if prev_val is not None and pd.notna(prev_val) else None
+                    
+                    col.metric(title, val_format, delta_display, help=help_text if delta_display else None)
 
-                display_kpi(kpi_cols[0], "💰 Penjualan Bulanan", last_month.get('TotalMonthlySales'), prev_month.get('TotalMonthlySales') if prev_month else None, help_str, True)
-                display_kpi(kpi_cols[1], "🛒 Transaksi Bulanan", last_month.get('TotalTransactions'), prev_month.get('TotalTransactions') if prev_month else None, help_str, False)
-                display_kpi(kpi_cols[2], "💳 AOV Bulanan", last_month.get('AOV'), prev_month.get('AOV') if prev_month else None, help_str, True)
-                
+                # Definisikan help_str dengan pengecekan yang aman
+                help_str = f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}" if prev_month is not None else ""
+
+                # Panggilan fungsi dengan pengecekan 'is not None' yang benar dan eksplisit
+                display_kpi(
+                    kpi_cols[0], "💰 Penjualan Bulanan", 
+                    last_month.get('TotalMonthlySales'), 
+                    prev_month.get('TotalMonthlySales') if prev_month is not None else None, 
+                    help_str, True
+                )
+                display_kpi(
+                    kpi_cols[1], "🛒 Transaksi Bulanan", 
+                    last_month.get('TotalTransactions'), 
+                    prev_month.get('TotalTransactions') if prev_month is not None else None, 
+                    help_str, False
+                )
+                display_kpi(
+                    kpi_cols[2], "💳 AOV Bulanan", 
+                    last_month.get('AOV'), 
+                    prev_month.get('AOV') if prev_month is not None else None, 
+                    help_str, True
+                )
+
                 st.markdown("---")
+                
+                # ... sisa kode untuk create_trend_chart_v3 tidak perlu diubah ...
 
                 def create_trend_chart_v3(df_data, y_col, y_label, color):
                     analysis_result = analyze_trend_v3(df_data, y_col, y_label)
