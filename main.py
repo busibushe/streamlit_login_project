@@ -70,96 +70,160 @@ def display_analysis_with_details_v3(title, analysis_result):
     st.markdown("---")
 
 def create_channel_analysis(df):
+    """Membuat visualisasi untuk analisis saluran penjualan dengan layout dan insight baru."""
     st.subheader("📊 Analisis Saluran Penjualan (Channel)")
-    if 'Visit Purpose' not in df.columns: return st.warning("Kolom 'Visit Purpose' tidak dipetakan.")
-    col1, col2 = st.columns([1, 2])
+    if 'Visit Purpose' not in df.columns:
+        st.warning("Kolom 'Visit Purpose' tidak dipetakan. Analisis saluran penjualan tidak tersedia.")
+        return
+
+    # --- PERBAIKAN: Layout diubah menjadi 2 kolom agar sejajar ---
+    col1, col2 = st.columns(2)
+    
     with col1:
-        st.metric("Total Saluran", df['Visit Purpose'].nunique())
         channel_sales = df.groupby('Visit Purpose')['Nett Sales'].sum().sort_values(ascending=False)
-        fig = px.pie(channel_sales, values='Nett Sales', names=channel_sales.index, title="Kontribusi Penjualan", hole=0.4)
+        fig = px.pie(channel_sales, values='Nett Sales', names=channel_sales.index, 
+                     title="Kontribusi Penjualan per Saluran", hole=0.4)
+        fig.update_layout(legend_title_text='Saluran')
         st.plotly_chart(fig, use_container_width=True)
+
     with col2:
         agg_data = df.groupby('Visit Purpose').agg(TotalSales=('Nett Sales', 'sum'), TotalBills=('Bill Number', 'nunique'))
         agg_data['AOV'] = agg_data['TotalSales'] / agg_data['TotalBills']
         aov_by_channel = agg_data['AOV'].sort_values(ascending=False)
-        fig2 = px.bar(aov_by_channel, y=aov_by_channel.index, x=aov_by_channel.values, orientation='h', labels={'x': 'AOV (Rp)', 'y': 'Saluran'}, title="AOV per Saluran")
+        fig2 = px.bar(aov_by_channel, x=aov_by_channel.index, y=aov_by_channel.values,
+                      labels={'y': 'Rata-rata Nilai Pesanan (AOV)', 'x': 'Saluran'}, 
+                      title="AOV per Saluran Penjualan")
         st.plotly_chart(fig2, use_container_width=True)
+        
+    # --- PERBAIKAN: Menambahkan komentar bisnis & rekomendasi aksi ---
+    highest_aov_channel = aov_by_channel.index[0]
+    highest_contrib_channel = channel_sales.index[0]
 
-# GANTI seluruh fungsi create_menu_engineering_chart yang lama dengan versi FINAL ini
+    st.info(f"""
+    **Insight Bisnis:**
+    - **Kontributor Terbesar:** Saluran **{highest_contrib_channel}** adalah penyumbang pendapatan terbesar Anda. Prioritaskan operasional dan promosi untuk saluran ini.
+    - **Nilai Pesanan Tertinggi:** Pelanggan dari saluran **{highest_aov_channel}** cenderung menghabiskan lebih banyak per transaksi. Pertimbangkan untuk memberikan penawaran eksklusif atau program loyalitas untuk segmen ini guna meningkatkan frekuensi kunjungan mereka.
+    """)
+
+# GANTI fungsi create_menu_engineering_chart yang lama dengan versi baru ini
 def create_menu_engineering_chart(df):
+    """Membuat visualisasi kuadran untuk menu engineering dengan insight bisnis."""
     st.subheader("🔬 Analisis Performa Menu (Menu Engineering)")
-    
-    # 1. Agregasi data menu
-    menu_perf = df.groupby('Menu').agg(
-        Qty=('Qty', 'sum'),
-        NettSales=('Nett Sales', 'sum')
-    ).reset_index()
-
-    if len(menu_perf) < 2:
-        st.warning("Data menu tidak cukup untuk analisis engineering.")
+    menu_perf = df.groupby('Menu').agg(Qty=('Qty', 'sum'), NettSales=('Nett Sales', 'sum')).reset_index()
+    if len(menu_perf) < 4: # Butuh setidaknya 4 item untuk analisis kuadran yang berarti
+        st.warning("Data menu tidak cukup untuk analisis kuadran yang berarti.")
         return
 
-    # 2. Hitung rata-rata untuk garis kuadran
-    avg_qty = menu_perf['Qty'].mean()
-    avg_sales = menu_perf['NettSales'].mean()
-    
-    # 3. Tentukan apakah akan menampilkan label teks
+    avg_qty, avg_sales = menu_perf['Qty'].mean(), menu_perf['NettSales'].mean()
     show_text = len(menu_perf) < 75 
     text_arg = menu_perf['Menu'] if show_text else None
 
-    # 4. Buat scatter plot dasar
-    fig = px.scatter(menu_perf, x='Qty', y='NettSales', 
-                     text=text_arg,  # Berikan data teks secara langsung
-                     title="Kuadran Performa Menu",
+    fig = px.scatter(menu_perf, x='Qty', y='NettSales', text=text_arg, title="Kuadran Performa Menu",
                      labels={'Qty': 'Total Kuantitas Terjual', 'NettSales': 'Total Penjualan Bersih (Rp)'},
-                     size='NettSales', color='NettSales', hover_name='Menu',
-                     hover_data={'Qty': True, 'NettSales': ':.0f'})
-
-    # 5. Tambahkan garis kuadran
-    fig.add_vline(x=avg_qty, line_dash="dash", line_color="gray", annotation_text="Rata-rata Qty")
-    fig.add_hline(y=avg_sales, line_dash="dash", line_color="gray", annotation_text="Rata-rata Sales")
-
-    # 6. --- PERBAIKAN FINAL: Atur teks melalui update_layout ---
+                     size='NettSales', color='NettSales', hover_name='Menu')
+    
+    fig.add_shape(type="rect", x0=avg_qty, y0=avg_sales, x1=fig.data[0].x.max(), y1=fig.data[0].y.max(),
+                  fillcolor="lightgreen", opacity=0.2, layer="below", line_width=0)
+    fig.add_shape(type="rect", x0=df['Qty'].min(), y0=avg_sales, x1=avg_qty, y1=fig.data[0].y.max(),
+                  fillcolor="lightblue", opacity=0.2, layer="below", line_width=0)
+    fig.add_shape(type="rect", x0=avg_qty, y0=df['Nett Sales'].min(), x1=fig.data[0].x.max(), y1=avg_sales,
+                  fillcolor="lightyellow", opacity=0.2, layer="below", line_width=0)
+    fig.add_shape(type="rect", x0=df['Qty'].min(), y0=df['Nett Sales'].min(), x1=avg_qty, y1=avg_sales,
+                  fillcolor="lightcoral", opacity=0.2, layer="below", line_width=0)
+    
+    fig.add_vline(x=avg_qty, line_dash="dash", line_color="gray")
+    fig.add_hline(y=avg_sales, line_dash="dash", line_color="gray")
+    
     if show_text:
-        # Cara paling stabil: atur mode dan posisi teks untuk seluruh layout
-        fig.update_layout(
-            uniformtext_minsize=8, 
-            uniformtext_mode='hide',
-            scattermode='group' # Opsi tambahan untuk stabilitas
-        )
-        # Atur posisi teks secara terpisah setelah layout diupdate
+        fig.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
         fig.update_traces(textposition='top center')
     else:
-        st.warning("⚠️ Terlalu banyak item menu untuk menampilkan semua label. Arahkan mouse ke titik untuk melihat detail menu.")
-
+        st.warning("⚠️ Label nama menu disembunyikan karena jumlahnya terlalu banyak. Arahkan mouse ke titik untuk melihat detail.")
+        
     st.plotly_chart(fig, use_container_width=True)
+
+    # --- PERBAIKAN: Menambahkan komentar bisnis & rekomendasi aksi ---
+    stars = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] > avg_sales)]
+    workhorses = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] <= avg_sales)]
+    
+    insight_text = "**Rekomendasi Aksi:**\n"
+    if not stars.empty:
+        top_star = stars.nlargest(1, 'NettSales')['Menu'].iloc[0]
+        insight_text += f"- **Fokuskan Promosi:** Menu **'{top_star}'** adalah Bintang (Star) utama Anda. Jadikan menu ini sebagai pusat promosi dan pastikan ketersediaannya.\n"
+    if not workhorses.empty:
+        top_workhorse = workhorses.nlargest(1, 'Qty')['Menu'].iloc[0]
+        insight_text += f"- **Peluang Profit:** Menu **'{top_workhorse}'** sangat populer (Workhorse) namun kontribusi penjualannya di bawah rata-rata. Coba buat paket bundling atau naikkan harganya sedikit untuk meningkatkan profitabilitas."
+    
+    st.info(insight_text)
+    
     st.info("""
     **Cara Membaca Kuadran:**
-    - **Kanan Atas (STARS 🌟):** Juara Anda! Populer dan menguntungkan. **Promosikan!**
-    - **Kanan Bawah (WORKHORSES 🐴):** Populer tapi kurang profit. **Naikkan harga atau buat paket bundling.**
-    - **Kiri Atas (PUZZLES 🤔):** Sangat profit tapi jarang dipesan. **Latih staf untuk merekomendasikan.**
-    - **Kiri Bawah (DOGS 🐶):** Kurang populer & profit. **Pertimbangkan untuk menghapus dari menu.**
+    - **Hijau (STARS 🌟):** Juara Anda! Populer dan menguntungkan.
+    - **Kuning (WORKHORSES 🐴):** Populer tapi kurang profit.
+    - **Biru (PUZZLES 🤔):** Sangat profit tapi jarang dipesan.
+    - **Merah (DOGS 🐶):** Kurang populer & profit.
     """)
-       
+
+# GANTI fungsi create_operational_efficiency_analysis yang lama dengan versi baru ini
 def create_operational_efficiency_analysis(df):
+    """Membuat visualisasi efisiensi dengan korelasi jumlah transaksi dan insight."""
     st.subheader("⏱️ Analisis Efisiensi Operasional")
-    required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time']
-    if not all(col in df.columns for col in required_cols): return st.warning("Kolom waktu (In, Out, Order Time) tidak dipetakan.")
+    required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
+    if not all(col in df.columns for col in required_cols):
+        st.warning("Kolom waktu (In, Out, Order Time) atau Bill Number tidak dipetakan."); return
+
     df_eff = df.copy()
     df_eff['Sales Date In'], df_eff['Sales Date Out'] = pd.to_datetime(df_eff['Sales Date In'], errors='coerce'), pd.to_datetime(df_eff['Sales Date Out'], errors='coerce')
     df_eff.dropna(subset=['Sales Date In', 'Sales Date Out'], inplace=True)
+    
+    if df_eff.empty: return st.warning("Data waktu masuk/keluar tidak valid atau kosong.")
+    
     df_eff['Prep Time (Seconds)'] = (df_eff['Sales Date Out'] - df_eff['Sales Date In']).dt.total_seconds()
     df_eff = df_eff[df_eff['Prep Time (Seconds)'].between(0, 3600)]
-    if df_eff.empty: return st.warning("Tidak ada data waktu persiapan yang valid.")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Waktu Persiapan Rata-rata", f"{df_eff['Prep Time (Seconds)'].mean():.1f} dtk")
-    col2.metric("Waktu Persiapan Tercepat", f"{df_eff['Prep Time (Seconds)'].min():.1f} dtk")
-    col3.metric("Waktu Persiapan Terlama", f"{df_eff['Prep Time (Seconds)'].max():.1f} dtk")
-    df_eff['Hour'] = pd.to_datetime(df_eff['Order Time'], format='%H:%M:%S', errors='coerce').dt.hour
-    avg_prep_by_hour = df_eff.groupby('Hour')['Prep Time (Seconds)'].mean().reset_index()
-    fig = px.bar(avg_prep_by_hour, x='Hour', y='Prep Time (Seconds)', title="Rata-rata Waktu Persiapan per Jam", labels={'Hour': 'Jam', 'Prep Time (Seconds)': 'Rata-rata Waktu (Detik)'})
-    st.plotly_chart(fig, use_container_width=True)
 
+    if df_eff.empty:
+        st.warning("Tidak ada data waktu persiapan yang valid (0-60 menit) untuk dianalisis."); return
+
+    kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+    kpi_col1.metric("Waktu Persiapan Rata-rata", f"{df_eff['Prep Time (Seconds)'].mean():.1f} dtk")
+    kpi_col2.metric("Waktu Persiapan Tercepat", f"{df_eff['Prep Time (Seconds)'].min():.1f} dtk")
+    kpi_col3.metric("Waktu Persiapan Terlama", f"{df_eff['Prep Time (Seconds)'].max():.1f} dtk")
+
+    if 'Order Time' in df_eff.columns and not df_eff['Order Time'].isnull().all():
+        df_eff['Hour'] = pd.to_datetime(df_eff['Order Time'].astype(str), errors='coerce').dt.hour
+        
+        agg_by_hour = df_eff.groupby('Hour').agg(
+            AvgPrepTime=('Prep Time (Seconds)', 'mean'),
+            TotalTransactions=('Bill Number', 'nunique')
+        ).reset_index()
+
+        from plotly.subplots import make_subplots
+        import plotly.graph_objects as go
+        
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(go.Bar(x=agg_by_hour['Hour'], y=agg_by_hour['TotalTransactions'], name="Jumlah Transaksi"), secondary_y=False)
+        fig.add_trace(go.Scatter(x=agg_by_hour['Hour'], y=agg_by_hour['AvgPrepTime'], name="Rata-rata Waktu Persiapan", mode='lines+markers'), secondary_y=True)
+        
+        fig.update_layout(title_text="Korelasi Waktu Persiapan & Jumlah Pengunjung per Jam")
+        fig.update_xaxes(title_text="Jam dalam Sehari")
+        fig.update_yaxes(title_text="<b>Jumlah Transaksi</b> (Batang)", secondary_y=False)
+        fig.update_yaxes(title_text="<b>Rata-rata Waktu Persiapan (Detik)</b> (Garis)", secondary_y=True)
+
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # --- PERBAIKAN: Menambahkan komentar bisnis & rekomendasi aksi ---
+        if not agg_by_hour.empty:
+            peak_visitor_hour = agg_by_hour.loc[agg_by_hour['TotalTransactions'].idxmax()]
+            longest_prep_hour = agg_by_hour.loc[agg_by_hour['AvgPrepTime'].idxmax()]
+            
+            st.info(f"""
+            **Insight Bisnis:**
+            - **Jam Puncak Pengunjung:** Kepadatan tertinggi terjadi pada jam **{int(peak_visitor_hour['Hour'])}:00**, dengan **{int(peak_visitor_hour['TotalTransactions'])}** transaksi.
+            - **Layanan Melambat:** Waktu persiapan terlama terjadi pada jam **{int(longest_prep_hour['Hour'])}:00**.
+            
+            **Rekomendasi Aksi:** Jika jam layanan melambat **sama atau berdekatan** dengan jam puncak pengunjung, ini adalah sinyal kuat bahwa dapur Anda kewalahan. Pertimbangkan untuk menambah staf atau menyederhanakan menu pada jam-jam krusial tersebut untuk menjaga kepuasan pelanggan.
+            """)
+            
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
 # ==============================================================================
