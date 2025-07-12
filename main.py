@@ -320,6 +320,79 @@ def create_operational_efficiency_analysis(df):
                 else:
                     st.warning("Tidak cukup data per jam untuk melakukan uji korelasi statistik.")
 
+# Tambahkan fungsi baru ini di bagian atas kode Anda
+def generate_executive_summary(df_filtered, monthly_agg):
+    """Menciptakan ringkasan eksekutif otomatis dari semua analisis."""
+    
+    # --- 1. Analisis Kesehatan Makro ---
+    health_status = "Perlu Perhatian"
+    health_color = "orange"
+    
+    trend_analysis = analyze_trend_v3(monthly_agg, 'TotalMonthlySales', 'Penjualan')
+    trend_narrative = trend_analysis.get('narrative', 'Gagal menganalisis tren.')
+
+    # Tentukan status kesehatan berdasarkan tren dan momentum
+    if "meningkat** secara signifikan" in trend_narrative:
+        if "positif**." in trend_narrative:
+            health_status = "Sangat Baik"
+            health_color = "green"
+        else:
+            health_status = "Baik (Momentum Melambat)"
+            health_color = "orange"
+    elif "menurun** secara signifikan" in trend_narrative:
+        health_status = "Waspada (Tren Menurun)"
+        health_color = "red"
+
+    # --- 2. Rekomendasi Aksi Otomatis ---
+    recommendations = []
+    
+    # Rekomendasi dari Menu Engineering
+    try:
+        menu_perf = df_filtered.groupby('Menu').agg(Qty=('Qty', 'sum'), NettSales=('Nett Sales', 'sum')).reset_index()
+        if len(menu_perf) >= 4:
+            avg_qty = menu_perf['Qty'].mean()
+            avg_sales = menu_perf['NettSales'].mean()
+            stars = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] > avg_sales)]
+            workhorses = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] <= avg_sales)]
+            if not stars.empty:
+                top_star = stars.nlargest(1, 'NettSales')['Menu'].iloc[0]
+                recommendations.append(f"🌟 **Prioritaskan Menu Bintang:** Fokuskan promosi pada **'{top_star}'** yang terbukti populer dan menguntungkan.")
+            if not workhorses.empty:
+                top_workhorse = workhorses.nlargest(1, 'Qty')['Menu'].iloc[0]
+                recommendations.append(f"🐴 **Optimalkan Profit Workhorse:** Menu **'{top_workhorse}'** sangat laku keras. Pertimbangkan untuk menaikkan harganya sedikit atau buat paket bundling untuk meningkatkan profitabilitasnya.")
+    except Exception:
+        pass # Lewati jika analisis gagal
+
+    # Rekomendasi dari Efisiensi Operasional
+    try:
+        if 'Sales Date In' in df_filtered.columns and 'Sales Date Out' in df_filtered.columns and 'Order Time' in df_filtered.columns:
+            df_eff = df_filtered.copy()
+            df_eff['Sales Date In'], df_eff['Sales Date Out'] = pd.to_datetime(df_eff['Sales Date In'], errors='coerce'), pd.to_datetime(df_eff['Sales Date Out'], errors='coerce')
+            df_eff.dropna(subset=['Sales Date In', 'Sales Date Out'], inplace=True)
+            df_eff['Prep Time (Seconds)'] = (df_eff['Sales Date Out'] - df_eff['Sales Date In']).dt.total_seconds()
+            df_eff = df_eff[df_eff['Prep Time (Seconds)'].between(0, 3600)]
+            df_eff['Hour'] = pd.to_datetime(df_eff['Order Time'].astype(str), errors='coerce').dt.hour
+            agg_by_hour = df_eff.groupby('Hour').agg(AvgPrepTime=('Prep Time (Seconds)', 'mean'), TotalTransactions=('Bill Number', 'nunique')).reset_index()
+            
+            if len(agg_by_hour) > 2 and agg_by_hour['TotalTransactions'].var() > 0:
+                peak_visitor_hour = agg_by_hour.loc[agg_by_hour['TotalTransactions'].idxmax()]
+                longest_prep_hour = agg_by_hour.loc[agg_by_hour['AvgPrepTime'].idxmax()]
+                if abs(peak_visitor_hour['Hour'] - longest_prep_hour['Hour']) <= 1:
+                     recommendations.append(f"⏱️ **Perbaiki Bottleneck Dapur:** Layanan melambat signifikan pada jam puncak ({int(peak_visitor_hour['Hour'])}:00). Prioritaskan penambahan sumber daya pada jam ini untuk menjaga kepuasan pelanggan.")
+    except Exception:
+        pass # Lewati jika analisis gagal
+
+    # --- 3. Fokus Bulan Berikutnya ---
+    next_focus = "Bulan depan, fokuskan pada eksekusi rekomendasi di atas dan pantau dampaknya pada **AOV (Average Order Value)** dan **kecepatan layanan**."
+
+    return {
+        "health_status": health_status,
+        "health_color": health_color,
+        "trend_narrative": trend_narrative,
+        "recommendations": recommendations,
+        "next_focus": next_focus
+    }
+
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
 # ==============================================================================
@@ -406,6 +479,7 @@ elif auth_status:
         except Exception as e:
             st.error(f"❌ Terjadi kesalahan saat memproses data: {e}"); st.stop()
 
+    # GANTI seluruh blok if st.session_state.data_processed dengan ini
     if st.session_state.data_processed:
         df_processed = st.session_state.df_processed
         
@@ -427,9 +501,45 @@ elif auth_status:
         if df_filtered.empty:
             st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih."); st.stop()
             
-        st.title(f"Sales Analysis Dashboard: {selected_branch}")
+        st.title(f"Dashboard Holistik: {selected_branch}")
         st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
 
+        # --- PERBAIKAN: Menghitung agregasi bulanan di awal untuk summary ---
+        monthly_df = df_filtered.copy()
+        monthly_df['Bulan'] = pd.to_datetime(monthly_df['Sales Date']).dt.to_period('M')
+        monthly_agg = monthly_df.groupby('Bulan').agg(
+            TotalMonthlySales=('Nett Sales', 'sum'),
+            TotalTransactions=('Bill Number', 'nunique')
+        ).reset_index()
+        if not monthly_agg.empty:
+            monthly_agg['AOV'] = monthly_agg.apply(lambda row: row['TotalMonthlySales'] / row['TotalTransactions'] if row['TotalTransactions'] > 0 else 0, axis=1)
+
+        # --- PEMANGGILAN FUNGSI SUMMARY & TAMPILANNYA ---
+        if not monthly_agg.empty and len(monthly_agg) >=3 :
+            summary = generate_executive_summary(df_filtered, monthly_agg)
+            
+            st.markdown("---")
+            with st.container(border=True):
+                st.subheader("Ringkasan Eksekutif & Rekomendasi Aksi")
+                col1, col2 = st.columns([1, 2])
+                with col1:
+                    st.metric("Status Kesehatan Bisnis", summary['health_status'])
+                    st.markdown(f"<p style='background-color:{summary['health_color']}; color:white; padding:10px; border-radius:5px;'>{summary['health_status']}</p>", unsafe_allow_html=True)
+
+                with col2:
+                    st.markdown("**Narasi Tren Utama:**")
+                    st.write(summary['trend_narrative'])
+
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                for rec in summary['recommendations']:
+                    st.write(rec)
+                
+                st.markdown("**Fokus Bulan Berikutnya:**")
+                st.success(summary['next_focus'])
+        st.markdown("---")
+
+
+        # --- Tampilan Tab Dasbor ---
         trend_tab, ops_tab = st.tabs(["📈 **Dashboard Tren Performa**", "🚀 **Dashboard Analisis Operasional**"])
 
         with trend_tab:
@@ -489,3 +599,105 @@ elif auth_status:
             create_menu_engineering_chart(df_filtered.copy())
             st.markdown("---")
             create_operational_efficiency_analysis(df_filtered.copy())
+
+        # with trend_tab:
+        #     # Logika untuk menampilkan KPI dan grafik tren (sudah ada di kode Anda)
+        #     st.header("Analisis Tren Performa Jangka Panjang")
+        #     if not monthly_agg.empty:
+        #         # ... (Salin-tempel seluruh logika dari `with trend_tab:` versi sebelumnya di sini)
+        #         st.success("Tampilan Tren Performa Lengkap") # Placeholder
+        #     else:
+        #         st.warning("Tidak cukup data untuk analisis tren.")
+
+        # with ops_tab:
+        #     st.header("Wawasan Operasional dan Taktis")
+        #     create_channel_analysis(df_filtered.copy())
+        #     st.markdown("---")
+        #     create_menu_engineering_chart(df_filtered.copy())
+        #     st.markdown("---")
+        #     create_operational_efficiency_analysis(df_filtered.copy())
+
+# backup
+    # if st.session_state.data_processed:
+    #     df_processed = st.session_state.df_processed
+        
+    #     st.sidebar.title("⚙️ Filter Global")
+    #     unique_branches = sorted(df_processed['Branch'].unique())
+    #     selected_branch = st.sidebar.selectbox("Pilih Cabang", unique_branches)
+    #     min_date, max_date = df_processed['Sales Date'].dt.date.min(), df_processed['Sales Date'].dt.date.max()
+    #     date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+
+    #     if len(date_range) != 2: st.stop()
+        
+    #     start_date, end_date = date_range
+    #     df_filtered = df_processed[
+    #         (df_processed['Branch'] == selected_branch) & 
+    #         (df_processed['Sales Date'].dt.date >= start_date) & 
+    #         (df_processed['Sales Date'].dt.date <= end_date)
+    #     ]
+        
+    #     if df_filtered.empty:
+    #         st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih."); st.stop()
+            
+    #     st.title(f"Sales Analysis Dashboard: {selected_branch}")
+    #     st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
+
+    #     trend_tab, ops_tab = st.tabs(["📈 **Dashboard Tren Performa**", "🚀 **Dashboard Analisis Operasional**"])
+
+    #     with trend_tab:
+    #         st.header("Analisis Tren Performa Jangka Panjang")
+            
+    #         monthly_df = df_filtered.copy()
+    #         monthly_df['Bulan'] = pd.to_datetime(monthly_df['Sales Date']).dt.to_period('M')
+    #         monthly_agg = monthly_df.groupby('Bulan').agg(
+    #             TotalMonthlySales=('Nett Sales', 'sum'),
+    #             TotalTransactions=('Bill Number', 'nunique')
+    #         ).reset_index()
+    #         monthly_agg['AOV'] = monthly_agg.apply(lambda row: row['TotalMonthlySales'] / row['TotalTransactions'] if row['TotalTransactions'] > 0 else 0, axis=1)
+
+    #         if not monthly_agg.empty:
+    #             monthly_agg['Bulan'] = monthly_agg['Bulan'].dt.to_timestamp()
+    #             monthly_agg.fillna(0, inplace=True)
+
+    #             kpi_cols = st.columns(3)
+    #             last_month = monthly_agg.iloc[-1]
+    #             prev_month = monthly_agg.iloc[-2] if len(monthly_agg) >= 2 else None
+
+    #             def display_kpi(col, title, current_val, prev_val, help_text, is_currency=True):
+    #                 if pd.isna(current_val): col.metric(title, "N/A"); return
+    #                 delta = 0
+    #                 if prev_val is not None and pd.notna(prev_val) and prev_val > 0:
+    #                     delta = (current_val - prev_val) / prev_val
+    #                 val_format = f"Rp {current_val:,.0f}" if is_currency else f"{current_val:,.2f}".rstrip('0').rstrip('.')
+    #                 delta_display = f"{delta:.1%}" if prev_val is not None and pd.notna(prev_val) else None
+    #                 col.metric(title, val_format, delta_display, help=help_text if delta_display else None)
+
+    #             help_str = f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}" if prev_month is not None else ""
+    #             display_kpi(kpi_cols[0], "💰 Penjualan Bulanan", last_month.get('TotalMonthlySales'), prev_month.get('TotalMonthlySales') if prev_month is not None else None, help_str, True)
+    #             display_kpi(kpi_cols[1], "🛒 Transaksi Bulanan", last_month.get('TotalTransactions'), prev_month.get('TotalTransactions') if prev_month is not None else None, help_str, False)
+    #             display_kpi(kpi_cols[2], "💳 AOV Bulanan", last_month.get('AOV'), prev_month.get('AOV') if prev_month is not None else None, help_str, True)
+                
+    #             st.markdown("---")
+
+    #             def create_trend_chart_v3(df_data, y_col, y_label, color):
+    #                 analysis_result = analyze_trend_v3(df_data, y_col, y_label)
+    #                 fig = px.line(df_data, x='Bulan', y=y_col, markers=True, labels={'Bulan': 'Bulan', y_col: y_label})
+    #                 fig.update_traces(line_color=color, name=y_label)
+    #                 if analysis_result.get('trendline') is not None: fig.add_scatter(x=df_data['Bulan'], y=analysis_result['trendline'], mode='lines', name='Garis Tren', line=dict(color='red', dash='dash'))
+    #                 if analysis_result.get('ma_line') is not None: fig.add_scatter(x=df_data['Bulan'], y=analysis_result['ma_line'], mode='lines', name='3-Month Moving Avg.', line=dict(color='orange', dash='dot'))
+    #                 st.plotly_chart(fig, use_container_width=True)
+    #                 display_analysis_with_details_v3(y_label, analysis_result)
+
+    #             create_trend_chart_v3(monthly_agg, 'TotalMonthlySales', 'Penjualan', 'royalblue')
+    #             create_trend_chart_v3(monthly_agg, 'TotalTransactions', 'Transaksi', 'orange')
+    #             create_trend_chart_v3(monthly_agg, 'AOV', 'AOV', 'green')
+    #         else:
+    #             st.warning("Tidak ada data bulanan yang cukup untuk analisis tren pada periode ini.")
+
+    #     with ops_tab:
+    #         st.header("Wawasan Operasional dan Taktis")
+    #         create_channel_analysis(df_filtered.copy())
+    #         st.markdown("---")
+    #         create_menu_engineering_chart(df_filtered.copy())
+    #         st.markdown("---")
+    #         create_operational_efficiency_analysis(df_filtered.copy())
