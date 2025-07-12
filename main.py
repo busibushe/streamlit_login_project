@@ -612,7 +612,7 @@ def display_executive_summary(summary):
             st.markdown(f'<div style="background-color:{color}; color:white; font-weight:bold; padding: 10px; border-radius: 7px; text-align:center;">{status.upper()}</div>', unsafe_allow_html=True)
 
         with col2:
-            st.markdown("Performa YoY")
+            st.markdown("Performa Year over Year")
             yoy_change = summary.get('yoy_change')
             if yoy_change is not None:
                 display_val = f"<h3 style='color:green; margin:0;'>↑ {yoy_change:.1%}</h3>" if yoy_change > 0 else f"<h3 style='color:red; margin:0;'>↓ {abs(yoy_change):.1%}</h3>"
@@ -775,7 +775,7 @@ elif auth_status:
         if df_filtered.empty:
             st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih."); st.stop()
             
-        st.title(f"Dashboard Holistik: {selected_branch}")
+        st.title(f"Sales Analysis Dashboard: {selected_branch}")
         st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
 
         # --- PERBAIKAN: Menghitung agregasi bulanan di awal untuk summary ---
