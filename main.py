@@ -1141,7 +1141,7 @@ def sc4_display_executive_summary(summary):
             st.markdown("---")
             st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
 
-def display_executive_summary(summary):
+def sc5_display_executive_summary(summary):
     """
     Menampilkan ringkasan eksekutif dengan layout horizontal yang sangat compact,
     menggunakan ikon panah berwarna untuk visualisasi skor yang intuitif.
@@ -1198,6 +1198,96 @@ def display_executive_summary(summary):
             
             st.markdown(" &bull; ".join(score_texts), unsafe_allow_html=True)
             st.caption("T: Tren Jk. Panjang, M: Momentum Jk. Pendek")
+
+        # --- Detail lainnya tetap di dalam expander ---
+        with st.expander("🔍 Lihat Narasi Lengkap & Rekomendasi Aksi"):
+            # (Tidak ada perubahan pada bagian ini)
+            st.markdown("**Narasi Tren Utama (Penjualan):**")
+            st.write(summary['trend_narrative'])
+            
+            if summary.get('health_context_narrative'):
+                st.markdown(summary['health_context_narrative'])
+
+            st.markdown("---")
+            
+            if summary['recommendations']:
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                for rec in summary['recommendations']:
+                    st.markdown(f"- {rec}")
+            else:
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
+
+            st.markdown("---")
+            st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
+
+def display_executive_summary(summary):
+    """
+    Menampilkan ringkasan eksekutif dengan layout horizontal yang compact,
+    visualisasi YoY yang disempurnakan, dan analisis skor multi-baris.
+    """
+    
+    # --- Fungsi Bantuan (Helper Function) untuk membuat panah ---
+    def format_score_with_arrows(score):
+        if score >= 2: return "<span style='color:green; font-size:1.2em;'>↑↑</span>"
+        if score == 1: return "<span style='color:green; font-size:1.2em;'>↑</span>"
+        if score == 0: return "<span style='color:blue; font-size:1.2em;'>→</span>"
+        if score == -1: return "<span style='color:red; font-size:1.2em;'>↓</span>"
+        if score <= -2: return "<span style='color:red; font-size:1.2em;'>↓↓</span>"
+        return ""
+
+    st.subheader("Ringkasan Eksekutif")
+    
+    with st.container(border=True):
+        col1, col2, col3 = st.columns([1.5, 1.2, 2.3])
+
+        # KOLOM 1: Status Kesehatan sebagai "Badge" Visual
+        with col1:
+            st.markdown("Status Kesehatan Bisnis")
+            status = summary['health_status']
+            color = summary['health_color']
+            st.markdown(
+                f"""
+                <div style="background-color:{color}; color:white; font-weight:bold; padding: 10px; border-radius: 7px; text-align:center;">
+                    {status.upper()}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # KOLOM 2: KPI Kinerja Utama (YoY) dengan Panah & Warna
+        with col2:
+            st.markdown("Performa YoY")
+            yoy_change = summary.get('yoy_change')
+            
+            # --- PERUBAHAN 1: Logika untuk menampilkan YoY dengan panah & warna ---
+            if yoy_change is not None:
+                if yoy_change > 0:
+                    display_val = f"<h3 style='color:green;'>↑ {yoy_change:.1%}</h3>"
+                else:
+                    display_val = f"<h3 style='color:red;'>↓ {abs(yoy_change):.1%}</h3>"
+            else:
+                display_val = "<h3>N/A</h3>"
+            
+            st.markdown(display_val, unsafe_allow_html=True)
+            st.caption("vs. Tahun Lalu")
+
+
+        # KOLOM 3: Rincian Skor dalam 3 Baris untuk Keterbacaan
+        with col3:
+            st.markdown("Analisis Skor")
+            
+            # --- PERUBAHAN 2: Menampilkan setiap metrik di baris baru ---
+            for metric, details in summary['score_details'].items():
+                total_arrow = format_score_with_arrows(details['total'])
+                trend_arrow = format_score_with_arrows(details['tren_jangka_panjang'])
+                momentum_arrow = format_score_with_arrows(details['momentum_jangka_pendek'])
+                
+                # Format teks dan tampilkan langsung di dalam loop
+                score_text = f"**{metric}:** {total_arrow} (T: {trend_arrow}, M: {momentum_arrow})"
+                st.markdown(score_text, unsafe_allow_html=True)
+
+            st.caption("T: Tren Jangka Panjang, M: Momentum Jangka Pendek")
 
         # --- Detail lainnya tetap di dalam expander ---
         with st.expander("🔍 Lihat Narasi Lengkap & Rekomendasi Aksi"):
