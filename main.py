@@ -249,7 +249,7 @@ elif auth_status:
     df_raw = load_raw_data(uploaded_sales_file)
     
     st.sidebar.subheader("🔗 Mapping Kolom")
-    REQUIRED_COLS_MAP = {'Sales Date': 'Tgl. Transaksi', 'Branch': 'Nama Cabang', 'Bill Number': 'No. Struk/Bill', 'Total After Bill Discount': 'Penjualan Bersih', 'Menu': 'Nama Item/Menu', 'Qty': 'Qty'}
+    REQUIRED_COLS_MAP = {'Sales Date': 'Tgl. Transaksi', 'Branch': 'Nama Cabang', 'Bill Number': 'No. Struk/Bill', 'Nett Sales': 'Penjualan Bersih', 'Menu': 'Nama Item/Menu', 'Qty': 'Kuantitas'}
     OPTIONAL_COLS_MAP = {'Visit Purpose': 'Saluran Penjualan', 'Payment Method': 'Metode Pembayaran', 'Sales Date In': 'Waktu Pesanan Masuk', 'Sales Date Out': 'Waktu Pesanan Selesai', 'Order Time': 'Jam Pesanan'}
     user_mapping = {}
     
