@@ -760,7 +760,7 @@ def display_executive_summary(summary):
                     st.markdown(f"- **{metric}:** `{score}` poin {emoji}")
                 st.caption("Skor dihitung dari tren jangka panjang (+2/-2) dan momentum jangka pendek (+1/-1).")
             
-            st.markdown("---")
+            # st.markdown("---")
             
             # Menampilkan rekomendasi aksi
             if summary['recommendations']:
