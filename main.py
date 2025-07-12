@@ -1470,7 +1470,9 @@ def display_executive_summary(summary):
                         momentum_arrow = format_score_with_arrows(details['momentum_jangka_pendek'])
                         
                         st.markdown(f"**{metric_name}**")
-                        st.markdown(f"<h3>{total_arrow}</h3>", unsafe_allow_html=True)
+                        # st.markdown(f"<h3>{total_arrow}</h3>", unsafe_allow_html=True)
+                        st.markdown(f"<h3 style='margin:0;'>{total_arrow}</h3>", unsafe_allow_html=True)
+
                         
                         # --- INI BARIS YANG DIPERBAIKI ---
                         # Mengganti st.caption dengan st.markdown dan tag <small>
