@@ -173,8 +173,101 @@ def create_menu_engineering_chart(df):
     - **Biru | PUZZLES 🤔:** Sangat profit tapi jarang dipesan. **Latih staf untuk merekomendasikan.**
     - **Merah | DOGS 🐶:** Kurang populer & profit. **Pertimbangkan untuk menghapus dari menu.**
     """)
-    
+
+# GANTI fungsi create_operational_efficiency_analysis yang lama dengan versi baru ini
+
 def create_operational_efficiency_analysis(df):
+    """
+    Membuat visualisasi efisiensi, menggabungkan insight bisnis utama 
+    dengan uji statistik opsional dalam sebuah expander.
+    """
+    st.subheader("⏱️ Analisis Efisiensi Operasional")
+    required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
+    if not all(col in df.columns for col in required_cols):
+        st.warning("Kolom waktu (In, Out, Order Time) atau Bill Number tidak dipetakan."); return
+
+    df_eff = df.copy()
+    df_eff['Sales Date In'], df_eff['Sales Date Out'] = pd.to_datetime(df_eff['Sales Date In'], errors='coerce'), pd.to_datetime(df_eff['Sales Date Out'], errors='coerce')
+    df_eff.dropna(subset=['Sales Date In', 'Sales Date Out'], inplace=True)
+    
+    if df_eff.empty: return st.warning("Data waktu masuk/keluar tidak valid atau kosong.")
+    
+    df_eff['Prep Time (Seconds)'] = (df_eff['Sales Date Out'] - df_eff['Sales Date In']).dt.total_seconds()
+    df_eff = df_eff[df_eff['Prep Time (Seconds)'].between(0, 3600)]
+
+    if df_eff.empty:
+        st.warning("Tidak ada data waktu persiapan yang valid (0-60 menit) untuk dianalisis."); return
+
+    kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+    kpi_col1.metric("Waktu Persiapan Rata-rata", f"{df_eff['Prep Time (Seconds)'].mean():.1f} dtk")
+    kpi_col2.metric("Waktu Persiapan Tercepat", f"{df_eff['Prep Time (Seconds)'].min():.1f} dtk")
+    kpi_col3.metric("Waktu Persiapan Terlama", f"{df_eff['Prep Time (Seconds)'].max():.1f} dtk")
+
+    if 'Order Time' in df_eff.columns and not df_eff['Order Time'].isnull().all():
+        df_eff['Hour'] = pd.to_datetime(df_eff['Order Time'].astype(str), errors='coerce').dt.hour
+        
+        agg_by_hour = df_eff.groupby('Hour').agg(
+            AvgPrepTime=('Prep Time (Seconds)', 'mean'),
+            TotalTransactions=('Bill Number', 'nunique')
+        ).reset_index()
+
+        from plotly.subplots import make_subplots
+        import plotly.graph_objects as go
+        
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(go.Bar(x=agg_by_hour['Hour'], y=agg_by_hour['TotalTransactions'], name="Jumlah Transaksi"), secondary_y=False)
+        fig.add_trace(go.Scatter(x=agg_by_hour['Hour'], y=agg_by_hour['AvgPrepTime'], name="Rata-rata Waktu Persiapan", mode='lines+markers'), secondary_y=True)
+        
+        fig.update_layout(title_text="Korelasi Waktu Persiapan & Jumlah Pengunjung per Jam")
+        fig.update_xaxes(title_text="Jam dalam Sehari")
+        fig.update_yaxes(title_text="<b>Jumlah Transaksi</b> (Batang)", secondary_y=False)
+        fig.update_yaxes(title_text="<b>Rata-rata Waktu Persiapan (Detik)</b> (Garis)", secondary_y=True)
+
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # --- PERBAIKAN: Menggabungkan insight bisnis dengan uji statistik ---
+        if not agg_by_hour.empty:
+            peak_visitor_hour = agg_by_hour.loc[agg_by_hour['TotalTransactions'].idxmax()]
+            longest_prep_hour = agg_by_hour.loc[agg_by_hour['AvgPrepTime'].idxmax()]
+            
+            # 1. Tampilkan insight bisnis utama yang selalu terlihat
+            st.info(f"""
+            **Insight Bisnis:**
+            - **Jam Puncak Pengunjung:** Kepadatan tertinggi terjadi pada jam **{int(peak_visitor_hour['Hour'])}:00**, dengan **{int(peak_visitor_hour['TotalTransactions'])}** transaksi.
+            - **Layanan Melambat:** Waktu persiapan terlama terjadi pada jam **{int(longest_prep_hour['Hour'])}:00**.
+            
+            **Rekomendasi Aksi:** Jika jam layanan melambat **sama atau berdekatan** dengan jam puncak, ini adalah sinyal kuat dapur Anda kewalahan. Pertimbangkan untuk menambah staf atau menyederhanakan menu pada jam-jam krusial tersebut.
+            """)
+            
+            # 2. Sediakan uji statistik di dalam expander
+            with st.expander("🔬 Lihat Uji Statistik Korelasi"):
+                if len(agg_by_hour) > 2:
+                    correlation, p_value = stats.spearmanr(agg_by_hour['TotalTransactions'], agg_by_hour['AvgPrepTime'])
+                    
+                    stat_col1, stat_col2 = st.columns(2)
+                    stat_col1.metric("Koefisien Korelasi Spearman (ρ)", f"{correlation:.3f}")
+                    stat_col2.metric("P-value", f"{p_value:.3f}")
+
+                    strength = ""
+                    if abs(correlation) >= 0.7: strength = "sangat kuat"
+                    elif abs(correlation) >= 0.5: strength = "kuat"
+                    elif abs(correlation) >= 0.3: strength = "moderat"
+                    else: strength = "lemah"
+
+                    if p_value < 0.05:
+                        st.success(f"""
+                        **Kesimpulan Statistik:** Terdapat korelasi positif yang **{strength} dan signifikan secara statistik**. 
+                        Ini **membuktikan secara angka** bahwa saat pengunjung lebih ramai, layanan dapur memang cenderung melambat.
+                        """)
+                    else:
+                        st.warning(f"""
+                        **Kesimpulan Statistik:** Meskipun terlihat ada korelasi, hasil ini **tidak signifikan secara statistik**. 
+                        Artinya, kita **tidak bisa menyimpulkan dengan yakin** bahwa kepadatan pengunjung adalah penyebab layanan melambat berdasarkan data ini saja.
+                        """)
+                else:
+                    st.warning("Tidak cukup data per jam untuk melakukan uji korelasi statistik.")
+                        
+def old_create_operational_efficiency_analysis(df):
     """Membuat visualisasi efisiensi dengan korelasi jumlah transaksi dan insight."""
     st.subheader("⏱️ Analisis Efisiensi Operasional")
     required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
