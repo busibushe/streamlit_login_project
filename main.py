@@ -166,10 +166,14 @@ def create_menu_engineering_chart(df):
     
     if len(insight_text) > 20: st.info(insight_text)
     
-    st.info("""**Cara Membaca Kuadran:**
-- **Hijau (STARS 🌟):** Juara Anda. | **Kuning (WORKHORSES 🐴):** Populer, kurang profit.
-- **Biru (PUZZLES 🤔):** Profit, kurang populer. | **Merah (DOGS 🐶):** Kurang populer & profit.""")
-
+    st.info("""
+    **Cara Membaca Kuadran:**
+    - **Hijau, Kanan Atas (STARS 🌟):** Juara Anda! Populer dan menguntungkan. **Promosikan!**
+    - **Kuning, Kanan Bawah (WORKHORSES 🐴):** Populer tapi kurang profit. **Naikkan harga atau buat paket bundling.**
+    - **Biru, Kiri Atas (PUZZLES 🤔):** Sangat profit tapi jarang dipesan. **Latih staf untuk merekomendasikan.**
+    - **Merah, Kiri Bawah (DOGS 🐶):** Kurang populer & profit. **Pertimbangkan untuk menghapus dari menu.**
+    """)
+    
 def create_operational_efficiency_analysis(df):
     """Membuat visualisasi efisiensi dengan korelasi jumlah transaksi dan insight."""
     st.subheader("⏱️ Analisis Efisiensi Operasional")
