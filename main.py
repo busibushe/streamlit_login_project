@@ -94,7 +94,7 @@ def display_analysis_with_details_v3(title, analysis_result):
 
 def create_channel_analysis(df):
     """Membuat visualisasi untuk analisis saluran penjualan dengan layout dan insight baru."""
-    st.subheader("📊 Analisis Saluran Penjualan (Channel)")
+    st.subheader("📊 Analisis Saluran Penjualan")
     if 'Visit Purpose' not in df.columns:
         st.warning("Kolom 'Visit Purpose' tidak dipetakan. Analisis saluran penjualan tidak tersedia.")
         return
@@ -124,7 +124,7 @@ def create_channel_analysis(df):
 
 def create_menu_engineering_chart(df):
     """Membuat visualisasi kuadran untuk menu engineering dengan insight bisnis."""
-    st.subheader("🔬 Analisis Performa Menu (Menu Engineering)")
+    st.subheader("🔬 Analisis Performa Menu")
     menu_perf = df.groupby('Menu').agg(Qty=('Qty', 'sum'), NettSales=('Nett Sales', 'sum')).reset_index()
     if len(menu_perf) < 4:
         st.warning("Data menu tidak cukup untuk analisis kuadran yang berarti."); return
@@ -168,10 +168,10 @@ def create_menu_engineering_chart(df):
     
     st.info("""
     **Cara Membaca Kuadran:**
-    - **Hijau, Kanan Atas (STARS 🌟):** Juara Anda! Populer dan menguntungkan. **Promosikan!**
-    - **Kuning, Kanan Bawah (WORKHORSES 🐴):** Populer tapi kurang profit. **Naikkan harga atau buat paket bundling.**
-    - **Biru, Kiri Atas (PUZZLES 🤔):** Sangat profit tapi jarang dipesan. **Latih staf untuk merekomendasikan.**
-    - **Merah, Kiri Bawah (DOGS 🐶):** Kurang populer & profit. **Pertimbangkan untuk menghapus dari menu.**
+    - **Hijau | STARS 🌟:** Populer dan menguntungkan. **Promosikan!**
+    - **Kuning | WORKHORSES 🐴:** Populer tapi kurang profit. **Naikkan harga atau buat paket bundling.**
+    - **Biru | PUZZLES 🤔:** Sangat profit tapi jarang dipesan. **Latih staf untuk merekomendasikan.**
+    - **Merah | DOGS 🐶:** Kurang populer & profit. **Pertimbangkan untuk menghapus dari menu.**
     """)
     
 def create_operational_efficiency_analysis(df):
@@ -218,7 +218,7 @@ def create_operational_efficiency_analysis(df):
             st.info(f"""**Insight Bisnis:**
 - **Jam Puncak Pengunjung:** Jam **{int(peak_visitor_hour['Hour'])}:00**, dengan **{int(peak_visitor_hour['TotalTransactions'])}** transaksi.
 - **Layanan Melambat:** Jam **{int(longest_prep_hour['Hour'])}:00**.
-**Rekomendasi Aksi:** Jika jam layanan melambat **sama atau berdekatan** dengan jam puncak, ini adalah sinyal kuat dapur Anda kewalahan. Pertimbangkan untuk menambah staf atau menyederhanakan menu pada jam-jam krusial tersebut.""")
+**Rekomendasi Aksi:** Jika jam layanan melambat **sama atau berdekatan** dengan jam puncak, ini adalah sinyal kuat adanya kewalahan. Pertimbangkan untuk menambah staf atau menyederhanakan menu pada jam-jam krusial tersebut jika waktu persiapan melebihi toleransi.""")
 
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
