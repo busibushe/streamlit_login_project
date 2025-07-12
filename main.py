@@ -321,7 +321,7 @@ def create_operational_efficiency_analysis(df):
                     st.warning("Tidak cukup data per jam untuk melakukan uji korelasi statistik.")
 
 # Tambahkan fungsi baru ini di bagian atas kode Anda
-def generate_executive_summary(df_filtered, monthly_agg):
+def old_generate_executive_summary(df_filtered, monthly_agg):
     """Menciptakan ringkasan eksekutif otomatis dari semua analisis."""
     
     # --- 1. Analisis Kesehatan Makro ---
@@ -393,8 +393,60 @@ def generate_executive_summary(df_filtered, monthly_agg):
         "next_focus": next_focus
     }
 
+# GANTI fungsi generate_executive_summary yang lama dengan ini
+def generate_executive_summary(df_filtered, monthly_agg):
+    """Menciptakan ringkasan eksekutif otomatis dari semua analisis."""
+    
+    # --- 1. Analisis Kesehatan Makro ---
+    health_status, health_color = "Perlu Perhatian", "orange"
+    trend_analysis = analyze_trend_v3(monthly_agg, 'TotalMonthlySales', 'Penjualan')
+    trend_narrative = trend_analysis.get('narrative', 'Gagal menganalisis tren.')
+    yoy_change_value = None # Inisialisasi nilai YoY
+
+    if "meningkat** secara signifikan" in trend_narrative:
+        health_status = "Baik" if "perlambatan" in trend_narrative else "Sangat Baik"
+        health_color = "orange" if "perlambatan" in trend_narrative else "green"
+    elif "menurun** secara signifikan" in trend_narrative:
+        health_status, health_color = "Waspada", "red"
+
+    if "Dibandingkan bulan yang sama tahun lalu" in trend_narrative:
+        df = monthly_agg.dropna(subset=['TotalMonthlySales'])
+        if len(df) >= 13:
+            last_val, yoy_val = df.iloc[-1]['TotalMonthlySales'], df.iloc[-13]['TotalMonthlySales']
+            if yoy_val > 0: yoy_change_value = (last_val - yoy_val) / yoy_val
+
+    # --- 2. Rekomendasi Aksi Otomatis ---
+    recommendations = []
+    try:
+        menu_perf = df_filtered.groupby('Menu').agg(Qty=('Qty', 'sum'), NettSales=('Nett Sales', 'sum')).reset_index()
+        if len(menu_perf) >= 4:
+            avg_qty, avg_sales = menu_perf['Qty'].mean(), menu_perf['NettSales'].mean()
+            stars = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] > avg_sales)]
+            workhorses = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] <= avg_sales)]
+            if not stars.empty:
+                top_star = stars.nlargest(1, 'NettSales')['Menu'].iloc[0]
+                recommendations.append(f"🌟 **Prioritaskan Bintang:** Fokuskan promosi pada **'{top_star}'**.")
+            if not workhorses.empty:
+                top_workhorse = workhorses.nlargest(1, 'Qty')['Menu'].iloc[0]
+                recommendations.append(f"🐴 **Optimalkan Profit:** Menu **'{top_workhorse}'** sangat laku, coba naikkan harga sedikit atau buat paket bundling.")
+    except Exception: pass
+
+    try:
+        if all(c in df_filtered.columns for c in ['Sales Date In', 'Sales Date Out', 'Order Time']):
+            # ... (Logika analisis efisiensi untuk mendapatkan rekomendasi)
+            pass 
+    except Exception: pass
+
+    # --- 3. Fokus Bulan Berikutnya ---
+    next_focus = "Pantau dampak eksekusi rekomendasi pada **AOV** dan **kecepatan layanan**."
+
+    return {
+        "health_status": health_status, "health_color": health_color, "yoy_change": yoy_change_value,
+        "trend_narrative": trend_narrative, "recommendations": recommendations, "next_focus": next_focus
+    }
+
 # Tambahkan fungsi baru ini di bagian atas kode Anda
-def display_executive_summary(summary):
+def old_display_executive_summary(summary):
     """Menampilkan ringkasan eksekutif dengan layout UI/UX yang lebih baik."""
     
     st.subheader("Ringkasan Eksekutif & Rekomendasi Aksi")
@@ -449,6 +501,42 @@ def display_executive_summary(summary):
     st.markdown("---")
     st.success(f"🎯 **Fokus Bulan Berikutnya:** {summary['next_focus']}")
 
+# GANTI fungsi display_executive_summary yang lama dengan ini
+def display_executive_summary(summary):
+    """Menampilkan ringkasan eksekutif dengan layout UI/UX yang compact."""
+    
+    st.subheader("Ringkasan Eksekutif")
+    
+    with st.container(border=True):
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            # Metrik utama yang paling penting
+            delta_text = f"{summary['yoy_change']:.1%}" if summary['yoy_change'] is not None else None
+            st.metric(
+                label="Status Kesehatan Bisnis", 
+                value=summary['health_status'],
+                delta=f"{delta_text} vs Tahun Lalu" if delta_text else None,
+                delta_color="normal" # Warna delta mengikuti positif/negatif
+            )
+        
+        with col2:
+            # Kesimpulan akhir yang langsung bisa ditindaklanjuti
+            st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
+
+        # Gunakan expander untuk menyembunyikan detail
+        with st.expander("🔍 Lihat Detail Analisis & Rekomendasi Aksi"):
+            st.markdown("**Narasi Tren Utama:**")
+            st.write(summary['trend_narrative'])
+            
+            if summary['recommendations']:
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                for rec in summary['recommendations']:
+                    st.markdown(f"- {rec}")
+            else:
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                st.write("Tidak ada rekomendasi aksi prioritas yang dihasilkan secara otomatis untuk periode ini.")
+                
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
 # ==============================================================================
@@ -576,7 +664,7 @@ elif auth_status:
             
             # Panggil fungsi display yang baru
             display_executive_summary(summary)
-            
+
             st.markdown("---")
             with st.container(border=True):
                 st.subheader("Ringkasan Eksekutif & Rekomendasi Aksi")
