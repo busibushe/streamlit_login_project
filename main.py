@@ -683,7 +683,7 @@ elif auth_status:
                 
             #     st.markdown("**Fokus Bulan Berikutnya:**")
             #     st.success(summary['next_focus'])
-        st.markdown("---")
+        # st.markdown("---")
 
 
         # --- Tampilan Tab Dasbor ---
