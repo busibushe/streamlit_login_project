@@ -392,15 +392,65 @@ elif auth_status:
             "🚀 Analisis Operasional", 
             "🧠 Wawasan Strategis"
         ])
-
+        
         with trend_tab:
-            # Kode untuk trend_tab tidak berubah
-            pass # (Anda bisa copy-paste kode trend_tab dari versi sebelumnya)
+            st.header("Analisis Tren Performa Jangka Panjang")
+            
+            monthly_df = df_filtered.copy()
+            monthly_df['Bulan'] = pd.to_datetime(monthly_df['Sales Date']).dt.to_period('M')
+            monthly_agg = monthly_df.groupby('Bulan').agg(
+                TotalMonthlySales=('Nett Sales', 'sum'),
+                TotalTransactions=('Bill Number', 'nunique')
+            ).reset_index()
+            monthly_agg['AOV'] = monthly_agg.apply(lambda row: row['TotalMonthlySales'] / row['TotalTransactions'] if row['TotalTransactions'] > 0 else 0, axis=1)
+
+            if not monthly_agg.empty:
+                monthly_agg['Bulan'] = monthly_agg['Bulan'].dt.to_timestamp()
+                monthly_agg.fillna(0, inplace=True)
+
+                kpi_cols = st.columns(3)
+                last_month = monthly_agg.iloc[-1]
+                prev_month = monthly_agg.iloc[-2] if len(monthly_agg) >= 2 else None
+
+                def display_kpi(col, title, current_val, prev_val, help_text, is_currency=True):
+                    if pd.isna(current_val): col.metric(title, "N/A"); return
+                    delta = 0
+                    if prev_val is not None and pd.notna(prev_val) and prev_val > 0:
+                        delta = (current_val - prev_val) / prev_val
+                    val_format = f"Rp {current_val:,.0f}" if is_currency else f"{current_val:,.2f}".rstrip('0').rstrip('.')
+                    delta_display = f"{delta:.1%}" if prev_val is not None and pd.notna(prev_val) else None
+                    col.metric(title, val_format, delta_display, help=help_text if delta_display else None)
+
+                help_str = f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}" if prev_month is not None else ""
+                display_kpi(kpi_cols[0], "💰 Penjualan Bulanan", last_month.get('TotalMonthlySales'), prev_month.get('TotalMonthlySales') if prev_month is not None else None, help_str, True)
+                display_kpi(kpi_cols[1], "🛒 Transaksi Bulanan", last_month.get('TotalTransactions'), prev_month.get('TotalTransactions') if prev_month is not None else None, help_str, False)
+                display_kpi(kpi_cols[2], "💳 AOV Bulanan", last_month.get('AOV'), prev_month.get('AOV') if prev_month is not None else None, help_str, True)
+                
+                st.markdown("---")
+
+                def create_trend_chart_v3(df_data, y_col, y_label, color):
+                    analysis_result = analyze_trend_v3(df_data, y_col, y_label)
+                    fig = px.line(df_data, x='Bulan', y=y_col, markers=True, labels={'Bulan': 'Bulan', y_col: y_label})
+                    fig.update_traces(line_color=color, name=y_label)
+                    if analysis_result.get('trendline') is not None: fig.add_scatter(x=df_data['Bulan'], y=analysis_result['trendline'], mode='lines', name='Garis Tren', line=dict(color='red', dash='dash'))
+                    if analysis_result.get('ma_line') is not None: fig.add_scatter(x=df_data['Bulan'], y=analysis_result['ma_line'], mode='lines', name='3-Month Moving Avg.', line=dict(color='orange', dash='dot'))
+                    st.plotly_chart(fig, use_container_width=True)
+                    display_analysis_with_details_v3(y_label, analysis_result)
+
+                create_trend_chart_v3(monthly_agg, 'TotalMonthlySales', 'Penjualan', 'royalblue')
+                create_trend_chart_v3(monthly_agg, 'TotalTransactions', 'Transaksi', 'orange')
+                create_trend_chart_v3(monthly_agg, 'AOV', 'AOV', 'green')
+            else:
+                st.warning("Tidak ada data bulanan yang cukup untuk analisis tren pada periode ini.")
 
         with ops_tab:
-            # Kode untuk ops_tab tidak berubah
-            pass # (Anda bisa copy-paste kode ops_tab dari versi sebelumnya)
-        
+            st.header("Wawasan Operasional dan Taktis")
+            create_channel_analysis(df_filtered.copy())
+            st.markdown("---")
+            create_menu_engineering_chart(df_filtered.copy())
+            st.markdown("---")
+            create_operational_efficiency_analysis(df_filtered.copy())
+
         with strategic_tab:
             st.header("Wawasan Strategis Lanjutan")
             st.markdown("Bagian ini berisi analisis silang untuk menemukan insight level senior yang dapat ditindaklanjuti.")
