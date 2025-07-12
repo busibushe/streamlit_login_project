@@ -363,7 +363,7 @@ def old_generate_executive_summary(df_filtered, monthly_agg):
         "trend_narrative": trend_narrative, "recommendations": recommendations, "next_focus": next_focus
     }
 
-def generate_executive_summary(df_filtered, monthly_agg):
+def sc_generate_executive_summary(df_filtered, monthly_agg):
     """
     Menciptakan ringkasan eksekutif dengan analisis multi-metrik (Penjualan, Transaksi, AOV)
     dan narasi kontekstual yang cerdas.
@@ -498,19 +498,22 @@ def generate_executive_summary(df_filtered, monthly_agg):
         "recommendations": recommendations, "next_focus": "Pantau dampak eksekusi pada AOV, Transaksi, dan Kecepatan Layanan."
     }
 
-def rs_generate_executive_summary(df_filtered, monthly_agg):
+def generate_executive_summary(df_filtered, monthly_agg):
     """
-    Menciptakan ringkasan eksekutif dengan analisis multi-metrik
-    dan menyimpan detail skor untuk transparansi.
+    Menciptakan ringkasan eksekutif otomatis dari semua analisis,
+    termasuk skor kesehatan multi-metrik, narasi kontekstual, dan rekomendasi cerdas.
     """
     
     # --- 1. Analisis Kesehatan Makro dengan Sistem Skor ---
+    
+    # Langkah 1: Analisis tren untuk setiap metrik kunci
     analyses = {
         'Penjualan': analyze_trend_v3(monthly_agg, 'TotalMonthlySales', 'Penjualan'),
         'Transaksi': analyze_trend_v3(monthly_agg, 'TotalTransactions', 'Transaksi'),
         'AOV': analyze_trend_v3(monthly_agg, 'AOV', 'AOV')
     }
 
+    # Langkah 2: Hitung skor kesehatan dan simpan rinciannya
     score_details = {}
     health_score = 0
     for metric, analysis in analyses.items():
@@ -537,15 +540,14 @@ def rs_generate_executive_summary(df_filtered, monthly_agg):
         health_status, health_color = "Baik", "green"
     elif health_score <= -4:
         health_status, health_color = "Waspada", "red"
-    # Skor antara -3 dan 0 tetap "Perlu Perhatian" karena sinyalnya campuran
 
     # Langkah 4: Buat narasi kontekstual berdasarkan pola antar metrik
     health_context_narrative = ""
-    sales_up = "meningkat** secara signifikan" in sales_analysis.get('narrative', '')
-    sales_down = "menurun** secara signifikan" in sales_analysis.get('narrative', '')
-    trx_up = "meningkat** secara signifikan" in trx_analysis.get('narrative', '')
-    aov_up = "meningkat** secara signifikan" in aov_analysis.get('narrative', '')
-    aov_down = "menurun** secara signifikan" in aov_analysis.get('narrative', '')
+    sales_up = "meningkat** secara signifikan" in analyses['Penjualan'].get('narrative', '')
+    sales_down = "menurun** secara signifikan" in analyses['Penjualan'].get('narrative', '')
+    trx_up = "meningkat** secara signifikan" in analyses['Transaksi'].get('narrative', '')
+    aov_up = "meningkat** secara signifikan" in analyses['AOV'].get('narrative', '')
+    aov_down = "menurun** secara signifikan" in analyses['AOV'].get('narrative', '')
 
     if sales_up and aov_up and not trx_up:
         health_context_narrative = "💡 **Insight Kunci:** Pertumbuhan didorong oleh **nilai belanja yang lebih tinggi (AOV naik)**, bukan dari penambahan jumlah transaksi."
@@ -553,19 +555,18 @@ def rs_generate_executive_summary(df_filtered, monthly_agg):
         health_context_narrative = "⚠️ **Perhatian:** Penjualan naik karena **volume transaksi yang tinggi**, namun AOV turun. Ini bisa jadi sinyal **terlalu banyak diskon** atau pergeseran ke produk yang lebih murah."
     elif sales_down and trx_up and aov_down:
         health_context_narrative = "🚨 **Waspada:** Jumlah transaksi mungkin naik, tapi **penurunan AOV yang tajam** menekan total penjualan secara signifikan. Analisis strategi harga dan promosi."
-    
-    # --- Sisanya sama dengan sebelumnya ---
+
+    # --- 2. Ekstraksi Data Tambahan & Rekomendasi Aksi Otomatis ---
     yoy_change_value = None
-    if "Dibandingkan bulan yang sama tahun lalu" in sales_analysis.get('narrative', ''):
+    if "Dibandingkan bulan yang sama tahun lalu" in analyses['Penjualan'].get('narrative', ''):
         df = monthly_agg.dropna(subset=['TotalMonthlySales'])
         if len(df) >= 13:
             last_val, yoy_val = df.iloc[-1]['TotalMonthlySales'], df.iloc[-13]['TotalMonthlySales']
             if yoy_val > 0: yoy_change_value = (last_val - yoy_val) / yoy_val
 
-    # --- 2. Rekomendasi Aksi Otomatis ---
     recommendations = []
     
-    # A. Rekomendasi dari Analisis Menu (Existing Logic)
+    # A. Rekomendasi dari Analisis Menu
     try:
         menu_perf = df_filtered.groupby('Menu').agg(Qty=('Qty', 'sum'), NettSales=('Nett Sales', 'sum')).reset_index()
         if len(menu_perf) >= 4:
@@ -580,7 +581,7 @@ def rs_generate_executive_summary(df_filtered, monthly_agg):
                 recommendations.append(f"🐴 **Optimalkan Profit:** Menu **'{top_workhorse}'** sangat laku, pertimbangkan menaikkan harga atau buat paket bundling.")
     except Exception: pass
 
-    # B. Rekomendasi dari Analisis Saluran Penjualan (BARU)
+    # B. Rekomendasi dari Analisis Saluran Penjualan
     try:
         if 'Visit Purpose' in df_filtered.columns:
             channel_sales = df_filtered.groupby('Visit Purpose')['Nett Sales'].sum()
@@ -592,7 +593,6 @@ def rs_generate_executive_summary(df_filtered, monthly_agg):
                 highest_contrib_channel = channel_sales.idxmax()
                 highest_aov_channel = aov_by_channel.idxmax()
                 
-                # Hanya tambahkan rekomendasi jika salurannya berbeda dan signifikan
                 if highest_contrib_channel == highest_aov_channel:
                      recommendations.append(f"🏆 **Maksimalkan Saluran Utama:** Saluran **'{highest_contrib_channel}'** adalah kontributor terbesar DAN memiliki AOV tertinggi. Prioritaskan segalanya di sini!")
                 else:
@@ -600,7 +600,7 @@ def rs_generate_executive_summary(df_filtered, monthly_agg):
                     recommendations.append(f"📈 **Tingkatkan Frekuensi Saluran AOV Tinggi:** Pelanggan di **'{highest_aov_channel}'** belanja paling banyak per transaksi. Buat program loyalitas untuk mereka.")
     except Exception: pass
 
-    # C. Rekomendasi dari Analisis Efisiensi (BARU & Berbasis Signifikansi)
+    # C. Rekomendasi dari Analisis Efisiensi (Berbasis Signifikansi)
     try:
         required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
         if all(col in df_filtered.columns for col in required_cols):
@@ -619,23 +619,24 @@ def rs_generate_executive_summary(df_filtered, monthly_agg):
 
             if len(agg_by_hour) > 2:
                 correlation, p_value = stats.spearmanr(agg_by_hour['TotalTransactions'], agg_by_hour['AvgPrepTime'])
-                # Rekomendasi hanya muncul jika korelasi POSITIF dan SIGNIFIKAN secara statistik
                 if p_value < 0.05 and correlation > 0.3:
                     peak_hour = agg_by_hour.loc[agg_by_hour['TotalTransactions'].idxmax()]['Hour']
                     recommendations.append(f"⏱️ **Atasi Kepadatan:** Layanan melambat saat ramai (terbukti statistik). Tambah sumber daya atau sederhanakan menu pada jam puncak sekitar pukul **{int(peak_hour)}:00**.")
     except Exception: pass
 
-
     # --- 3. Fokus Bulan Berikutnya ---
-    next_focus = "Pantau dampak eksekusi rekomendasi pada **AOV** dan **kecepatan layanan**."
+    next_focus = "Pantau dampak eksekusi rekomendasi pada AOV, Transaksi, dan Kecepatan Layanan."
 
-    # --- Pengembalian nilai ---
+    # --- 4. Kumpulkan Semua Hasil ---
     return {
-        "health_status": health_status, "health_color": health_color, "yoy_change": yoy_change_value,
-        "trend_narrative": sales_analysis.get('narrative', 'Gagal menganalisis tren penjualan.'),
-        "score_details": score_details, # <-- TAMBAHAN BARU
-        "health_context_narrative": health_context_narrative, # <-- NILAI BARU
-        "recommendations": recommendations, "next_focus": "Pantau dampak eksekusi pada AOV, Transaksi, dan Kecepatan Layanan."
+        "health_status": health_status, 
+        "health_color": health_color, 
+        "yoy_change": yoy_change_value,
+        "trend_narrative": analyses['Penjualan'].get('narrative', 'Gagal menganalisis tren penjualan.'),
+        "health_context_narrative": health_context_narrative,
+        "score_details": score_details,
+        "recommendations": recommendations, 
+        "next_focus": next_focus
     }
 
 def old_display_executive_summary(summary):
@@ -673,7 +674,7 @@ def old_display_executive_summary(summary):
                 st.markdown("**Rekomendasi Aksi Teratas:**")
                 st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
 
-def display_executive_summary(summary):
+def sc_display_executive_summary(summary):
     """Menampilkan ringkasan eksekutif dengan layout UI/UX yang compact."""
     
     st.subheader("Ringkasan Eksekutif")
@@ -713,7 +714,7 @@ def display_executive_summary(summary):
                 st.markdown("**Rekomendasi Aksi Teratas:**")
                 st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
 
-def rs_display_executive_summary(summary):
+def display_executive_summary(summary):
     """
     Menampilkan ringkasan eksekutif dengan layout UI/UX yang compact,
     termasuk narasi kontekstual dan rincian skor yang bisa diperluas.
@@ -769,7 +770,6 @@ def rs_display_executive_summary(summary):
             else:
                 st.markdown("**Rekomendasi Aksi Teratas:**")
                 st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
-
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
 # ==============================================================================
