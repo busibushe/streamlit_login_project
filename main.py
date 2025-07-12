@@ -363,7 +363,7 @@ def old_generate_executive_summary(df_filtered, monthly_agg):
         "trend_narrative": trend_narrative, "recommendations": recommendations, "next_focus": next_focus
     }
 
-def old2_generate_executive_summary(df_filtered, monthly_agg):
+def generate_executive_summary(df_filtered, monthly_agg):
     """
     Menciptakan ringkasan eksekutif dengan analisis multi-metrik (Penjualan, Transaksi, AOV)
     dan narasi kontekstual yang cerdas.
@@ -498,7 +498,7 @@ def old2_generate_executive_summary(df_filtered, monthly_agg):
         "recommendations": recommendations, "next_focus": "Pantau dampak eksekusi pada AOV, Transaksi, dan Kecepatan Layanan."
     }
 
-def generate_executive_summary(df_filtered, monthly_agg):
+def rs_generate_executive_summary(df_filtered, monthly_agg):
     """
     Menciptakan ringkasan eksekutif dengan analisis multi-metrik
     dan menyimpan detail skor untuk transparansi.
@@ -673,7 +673,7 @@ def old_display_executive_summary(summary):
                 st.markdown("**Rekomendasi Aksi Teratas:**")
                 st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
 
-def old2_display_executive_summary(summary):
+def display_executive_summary(summary):
     """Menampilkan ringkasan eksekutif dengan layout UI/UX yang compact."""
     
     st.subheader("Ringkasan Eksekutif")
@@ -713,7 +713,7 @@ def old2_display_executive_summary(summary):
                 st.markdown("**Rekomendasi Aksi Teratas:**")
                 st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
 
-def display_executive_summary(summary):
+def rs_display_executive_summary(summary):
     """
     Menampilkan ringkasan eksekutif dengan layout UI/UX yang compact,
     termasuk narasi kontekstual dan rincian skor yang bisa diperluas.
