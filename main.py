@@ -393,6 +393,62 @@ def generate_executive_summary(df_filtered, monthly_agg):
         "next_focus": next_focus
     }
 
+# Tambahkan fungsi baru ini di bagian atas kode Anda
+def display_executive_summary(summary):
+    """Menampilkan ringkasan eksekutif dengan layout UI/UX yang lebih baik."""
+    
+    st.subheader("Ringkasan Eksekutif & Rekomendasi Aksi")
+
+    # Baris 1: Status Kesehatan dan Narasi Tren
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        # Kartu Status Kesehatan
+        st.markdown(f"""
+        <div style="
+            background-color: {summary['health_color']}; 
+            padding: 20px; 
+            border-radius: 10px; 
+            color: white; 
+            text-align: center;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;">
+            <p style="font-size: 18px; margin: 0; font-weight: bold;">Status Kesehatan Bisnis</p>
+            <p style="font-size: 32px; margin: 0; font-weight: bold;">{summary['health_status']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        # Kartu Narasi Tren
+        with st.container(border=True, height=205):
+            st.markdown("**Narasi Tren Utama:**")
+            # Memecah narasi menjadi poin-poin agar lebih mudah dibaca
+            for part in summary['trend_narrative'].split('. '):
+                if part:
+                    st.markdown(f"- {part.strip()}.")
+    
+    st.markdown("---")
+
+    # Baris 2: Rekomendasi Aksi
+    st.subheader("Rekomendasi Aksi Teratas")
+    if summary['recommendations']:
+        num_recs = len(summary['recommendations'])
+        rec_cols = st.columns(num_recs)
+        for i, rec in enumerate(summary['recommendations']):
+            with rec_cols[i]:
+                with st.container(border=True):
+                    # Menggunakan emoji sebagai header visual
+                    st.markdown(f"<h3 style='text-align: center;'>{rec.split(' ')[0]}</h3>", unsafe_allow_html=True)
+                    st.write(rec.split(' ', 1)[1]) # Tampilkan sisa teks
+    else:
+        st.info("Tidak ada rekomendasi aksi spesifik yang dihasilkan untuk periode ini.")
+
+    # Baris 3: Fokus Bulan Berikutnya
+    st.markdown("---")
+    st.success(f"🎯 **Fokus Bulan Berikutnya:** {summary['next_focus']}")
+
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
 # ==============================================================================
@@ -517,6 +573,9 @@ elif auth_status:
         # --- PEMANGGILAN FUNGSI SUMMARY & TAMPILANNYA ---
         if not monthly_agg.empty and len(monthly_agg) >=3 :
             summary = generate_executive_summary(df_filtered, monthly_agg)
+            
+            # Panggil fungsi display yang baru
+            display_executive_summary(summary)
             
             st.markdown("---")
             with st.container(border=True):
