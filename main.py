@@ -268,57 +268,6 @@ def create_operational_efficiency_analysis(df):
                     st.warning("Tidak cukup data per jam untuk melakukan uji korelasi statistik.")
 
 def old_generate_executive_summary(df_filtered, monthly_agg):
-    """Menciptakan ringkasan eksekutif otomatis dari semua analisis."""
-    
-    # --- 1. Analisis Kesehatan Makro ---
-    health_status, health_color = "Perlu Perhatian", "orange"
-    trend_analysis = analyze_trend_v3(monthly_agg, 'TotalMonthlySales', 'Penjualan')
-    trend_narrative = trend_analysis.get('narrative', 'Gagal menganalisis tren.')
-    yoy_change_value = None # Inisialisasi nilai YoY
-
-    if "meningkat** secara signifikan" in trend_narrative:
-        health_status = "Baik" if "perlambatan" in trend_narrative else "Sangat Baik"
-        health_color = "orange" if "perlambatan" in trend_narrative else "green"
-    elif "menurun** secara signifikan" in trend_narrative:
-        health_status, health_color = "Waspada", "red"
-
-    if "Dibandingkan bulan yang sama tahun lalu" in trend_narrative:
-        df = monthly_agg.dropna(subset=['TotalMonthlySales'])
-        if len(df) >= 13:
-            last_val, yoy_val = df.iloc[-1]['TotalMonthlySales'], df.iloc[-13]['TotalMonthlySales']
-            if yoy_val > 0: yoy_change_value = (last_val - yoy_val) / yoy_val
-
-    # --- 2. Rekomendasi Aksi Otomatis ---
-    recommendations = []
-    try:
-        menu_perf = df_filtered.groupby('Menu').agg(Qty=('Qty', 'sum'), NettSales=('Nett Sales', 'sum')).reset_index()
-        if len(menu_perf) >= 4:
-            avg_qty, avg_sales = menu_perf['Qty'].mean(), menu_perf['NettSales'].mean()
-            stars = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] > avg_sales)]
-            workhorses = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] <= avg_sales)]
-            if not stars.empty:
-                top_star = stars.nlargest(1, 'NettSales')['Menu'].iloc[0]
-                recommendations.append(f"🌟 **Prioritaskan Bintang:** Fokuskan promosi pada **'{top_star}'**.")
-            if not workhorses.empty:
-                top_workhorse = workhorses.nlargest(1, 'Qty')['Menu'].iloc[0]
-                recommendations.append(f"🐴 **Optimalkan Profit:** Menu **'{top_workhorse}'** sangat laku, coba naikkan harga sedikit atau buat paket bundling.")
-    except Exception: pass
-
-    try:
-        if all(c in df_filtered.columns for c in ['Sales Date In', 'Sales Date Out', 'Order Time']):
-            # ... (Logika analisis efisiensi untuk mendapatkan rekomendasi)
-            pass 
-    except Exception: pass
-
-    # --- 3. Fokus Bulan Berikutnya ---
-    next_focus = "Pantau dampak eksekusi rekomendasi pada **AOV** dan **kecepatan layanan**."
-
-    return {
-        "health_status": health_status, "health_color": health_color, "yoy_change": yoy_change_value,
-        "trend_narrative": trend_narrative, "recommendations": recommendations, "next_focus": next_focus
-    }
-
-def generate_executive_summary(df_filtered, monthly_agg):
     """
     Menciptakan ringkasan eksekutif otomatis dari semua analisis,
     termasuk rekomendasi dari Saluran Penjualan dan Efisiensi Operasional (jika signifikan).
@@ -413,8 +362,143 @@ def generate_executive_summary(df_filtered, monthly_agg):
         "health_status": health_status, "health_color": health_color, "yoy_change": yoy_change_value,
         "trend_narrative": trend_narrative, "recommendations": recommendations, "next_focus": next_focus
     }
+
+def generate_executive_summary(df_filtered, monthly_agg):
+    """
+    Menciptakan ringkasan eksekutif dengan analisis multi-metrik (Penjualan, Transaksi, AOV)
+    dan narasi kontekstual yang cerdas.
+    """
     
-def display_executive_summary(summary):
+    # --- 1. Analisis Kesehatan Makro dengan Sistem Skor ---
+    
+    # Langkah 1: Analisis tren untuk setiap metrik kunci
+    sales_analysis = analyze_trend_v3(monthly_agg, 'TotalMonthlySales', 'Penjualan')
+    trx_analysis = analyze_trend_v3(monthly_agg, 'TotalTransactions', 'Transaksi')
+    aov_analysis = analyze_trend_v3(monthly_agg, 'AOV', 'AOV')
+
+    # Langkah 2: Hitung skor kesehatan berdasarkan tren setiap metrik
+    health_score = 0
+    for analysis in [sales_analysis, trx_analysis, aov_analysis]:
+        narrative = analysis.get('narrative', '')
+        if "meningkat** secara signifikan" in narrative:
+            health_score += 2
+        elif "menurun** secara signifikan" in narrative:
+            health_score -= 2
+        
+        if "Momentum jangka pendek (3 bulan terakhir) terlihat **positif**" in narrative:
+            health_score += 1
+        elif "Momentum jangka pendek menunjukkan **perlambatan**" in narrative:
+            health_score -= 1
+
+    # Langkah 3: Tentukan status kesehatan akhir dari total skor
+    health_status, health_color = "Perlu Perhatian", "orange"
+    if health_score > 4:
+        health_status, health_color = "Sangat Baik", "green"
+    elif health_score >= 1:
+        health_status, health_color = "Baik", "green"
+    elif health_score <= -4:
+        health_status, health_color = "Waspada", "red"
+    # Skor antara -3 dan 0 tetap "Perlu Perhatian" karena sinyalnya campuran
+
+    # Langkah 4: Buat narasi kontekstual berdasarkan pola antar metrik
+    health_context_narrative = ""
+    sales_up = "meningkat** secara signifikan" in sales_analysis.get('narrative', '')
+    sales_down = "menurun** secara signifikan" in sales_analysis.get('narrative', '')
+    trx_up = "meningkat** secara signifikan" in trx_analysis.get('narrative', '')
+    aov_up = "meningkat** secara signifikan" in aov_analysis.get('narrative', '')
+    aov_down = "menurun** secara signifikan" in aov_analysis.get('narrative', '')
+
+    if sales_up and aov_up and not trx_up:
+        health_context_narrative = "💡 **Insight Kunci:** Pertumbuhan didorong oleh **nilai belanja yang lebih tinggi (AOV naik)**, bukan dari penambahan jumlah transaksi."
+    elif sales_up and trx_up and aov_down:
+        health_context_narrative = "⚠️ **Perhatian:** Penjualan naik karena **volume transaksi yang tinggi**, namun AOV turun. Ini bisa jadi sinyal **terlalu banyak diskon** atau pergeseran ke produk yang lebih murah."
+    elif sales_down and trx_up and aov_down:
+        health_context_narrative = "🚨 **Waspada:** Jumlah transaksi mungkin naik, tapi **penurunan AOV yang tajam** menekan total penjualan secara signifikan. Analisis strategi harga dan promosi."
+    
+    # --- Sisanya sama dengan sebelumnya ---
+    yoy_change_value = None
+    if "Dibandingkan bulan yang sama tahun lalu" in sales_analysis.get('narrative', ''):
+        df = monthly_agg.dropna(subset=['TotalMonthlySales'])
+        if len(df) >= 13:
+            last_val, yoy_val = df.iloc[-1]['TotalMonthlySales'], df.iloc[-13]['TotalMonthlySales']
+            if yoy_val > 0: yoy_change_value = (last_val - yoy_val) / yoy_val
+
+    # --- 2. Rekomendasi Aksi Otomatis ---
+    recommendations = []
+    
+    # A. Rekomendasi dari Analisis Menu (Existing Logic)
+    try:
+        menu_perf = df_filtered.groupby('Menu').agg(Qty=('Qty', 'sum'), NettSales=('Nett Sales', 'sum')).reset_index()
+        if len(menu_perf) >= 4:
+            avg_qty, avg_sales = menu_perf['Qty'].mean(), menu_perf['NettSales'].mean()
+            stars = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] > avg_sales)]
+            workhorses = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] <= avg_sales)]
+            if not stars.empty:
+                top_star = stars.nlargest(1, 'NettSales')['Menu'].iloc[0]
+                recommendations.append(f"🌟 **Prioritaskan Bintang:** Fokuskan promosi pada **'{top_star}'**.")
+            if not workhorses.empty:
+                top_workhorse = workhorses.nlargest(1, 'Qty')['Menu'].iloc[0]
+                recommendations.append(f"🐴 **Optimalkan Profit:** Menu **'{top_workhorse}'** sangat laku, pertimbangkan menaikkan harga atau buat paket bundling.")
+    except Exception: pass
+
+    # B. Rekomendasi dari Analisis Saluran Penjualan (BARU)
+    try:
+        if 'Visit Purpose' in df_filtered.columns:
+            channel_sales = df_filtered.groupby('Visit Purpose')['Nett Sales'].sum()
+            agg_data = df_filtered.groupby('Visit Purpose').agg(TotalSales=('Nett Sales', 'sum'), TotalBills=('Bill Number', 'nunique'))
+            agg_data['AOV'] = agg_data['TotalSales'] / agg_data['TotalBills']
+            aov_by_channel = agg_data['AOV']
+
+            if not channel_sales.empty and not aov_by_channel.empty:
+                highest_contrib_channel = channel_sales.idxmax()
+                highest_aov_channel = aov_by_channel.idxmax()
+                
+                # Hanya tambahkan rekomendasi jika salurannya berbeda dan signifikan
+                if highest_contrib_channel == highest_aov_channel:
+                     recommendations.append(f"🏆 **Maksimalkan Saluran Utama:** Saluran **'{highest_contrib_channel}'** adalah kontributor terbesar DAN memiliki AOV tertinggi. Prioritaskan segalanya di sini!")
+                else:
+                    recommendations.append(f"💰 **Jaga Kontributor Terbesar:** Pertahankan performa saluran **'{highest_contrib_channel}'** yang menjadi penyumbang pendapatan utama Anda.")
+                    recommendations.append(f"📈 **Tingkatkan Frekuensi Saluran AOV Tinggi:** Pelanggan di **'{highest_aov_channel}'** belanja paling banyak per transaksi. Buat program loyalitas untuk mereka.")
+    except Exception: pass
+
+    # C. Rekomendasi dari Analisis Efisiensi (BARU & Berbasis Signifikansi)
+    try:
+        required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
+        if all(col in df_filtered.columns for col in required_cols):
+            df_eff = df_filtered.copy()
+            df_eff['Sales Date In'] = pd.to_datetime(df_eff['Sales Date In'], errors='coerce')
+            df_eff['Sales Date Out'] = pd.to_datetime(df_eff['Sales Date Out'], errors='coerce')
+            df_eff.dropna(subset=['Sales Date In', 'Sales Date Out'], inplace=True)
+            df_eff['Prep Time (Seconds)'] = (df_eff['Sales Date Out'] - df_eff['Sales Date In']).dt.total_seconds()
+            df_eff = df_eff[df_eff['Prep Time (Seconds)'].between(0, 3600)]
+            df_eff['Hour'] = pd.to_datetime(df_eff['Order Time'].astype(str), errors='coerce').dt.hour
+            
+            agg_by_hour = df_eff.groupby('Hour').agg(
+                AvgPrepTime=('Prep Time (Seconds)', 'mean'),
+                TotalTransactions=('Bill Number', 'nunique')
+            ).reset_index()
+
+            if len(agg_by_hour) > 2:
+                correlation, p_value = stats.spearmanr(agg_by_hour['TotalTransactions'], agg_by_hour['AvgPrepTime'])
+                # Rekomendasi hanya muncul jika korelasi POSITIF dan SIGNIFIKAN secara statistik
+                if p_value < 0.05 and correlation > 0.3:
+                    peak_hour = agg_by_hour.loc[agg_by_hour['TotalTransactions'].idxmax()]['Hour']
+                    recommendations.append(f"⏱️ **Atasi Kepadatan:** Layanan melambat saat ramai (terbukti statistik). Tambah sumber daya atau sederhanakan menu pada jam puncak sekitar pukul **{int(peak_hour)}:00**.")
+    except Exception: pass
+
+
+    # --- 3. Fokus Bulan Berikutnya ---
+    next_focus = "Pantau dampak eksekusi rekomendasi pada **AOV** dan **kecepatan layanan**."
+
+    # --- Pengembalian nilai ---
+    return {
+        "health_status": health_status, "health_color": health_color, "yoy_change": yoy_change_value,
+        "trend_narrative": sales_analysis.get('narrative', 'Gagal menganalisis tren penjualan.'),
+        "health_context_narrative": health_context_narrative, # <-- NILAI BARU
+        "recommendations": recommendations, "next_focus": "Pantau dampak eksekusi pada AOV, Transaksi, dan Kecepatan Layanan."
+    }
+
+def old_display_executive_summary(summary):
     """Menampilkan ringkasan eksekutif dengan layout UI/UX yang compact."""
     
     st.subheader("Ringkasan Eksekutif")
@@ -440,6 +524,46 @@ def display_executive_summary(summary):
         with st.expander("🔍 Lihat Detail Analisis & Rekomendasi Aksi"):
             st.markdown("**Narasi Tren Utama:**")
             st.write(summary['trend_narrative'])
+            
+            if summary['recommendations']:
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                for rec in summary['recommendations']:
+                    st.markdown(f"- {rec}")
+            else:
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
+
+def display_executive_summary(summary):
+    """Menampilkan ringkasan eksekutif dengan layout UI/UX yang compact."""
+    
+    st.subheader("Ringkasan Eksekutif")
+    
+    with st.container(border=True):
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            delta_text = f"{summary['yoy_change']:.1%}" if summary['yoy_change'] is not None else None
+            st.metric(
+                label="Status Kesehatan Bisnis", 
+                value=summary['health_status'],
+                delta=f"{delta_text} vs Tahun Lalu" if delta_text else None,
+                delta_color="normal"
+            )
+        
+        with col2:
+            st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
+
+        # Gunakan expander untuk menyembunyikan detail
+        with st.expander("🔍 Lihat Detail Analisis & Rekomendasi Aksi"):
+            st.markdown("**Narasi Tren Utama (Penjualan):**")
+            st.write(summary['trend_narrative'])
+
+            # --- TAMBAHAN BARU DI SINI ---
+            if summary.get('health_context_narrative'):
+                st.markdown(summary['health_context_narrative'])
+            # --- AKHIR TAMBAHAN ---
+            
+            st.markdown("---") # Tambahkan pemisah
             
             if summary['recommendations']:
                 st.markdown("**Rekomendasi Aksi Teratas:**")
