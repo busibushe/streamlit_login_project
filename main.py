@@ -924,7 +924,7 @@ def old2_display_executive_summary(summary):
                 st.markdown("**Rekomendasi Aksi Teratas:**")
                 st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
 
-def display_executive_summary(summary):
+def sc2_display_executive_summary(summary):
     """
     Menampilkan ringkasan eksekutif dengan layout UI/UX yang compact,
     termasuk narasi kontekstual dan rincian skor analitis yang bisa diperluas.
@@ -984,8 +984,6 @@ def display_executive_summary(summary):
                     st.markdown(tren_text)
                     st.markdown(momentum_text)
             
-            # st.markdown("---")
-            
             # Menampilkan rekomendasi aksi
             if summary['recommendations']:
                 st.markdown("**Rekomendasi Aksi Teratas:**")
@@ -995,6 +993,87 @@ def display_executive_summary(summary):
                 st.markdown("**Rekomendasi Aksi Teratas:**")
                 st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
 
+def display_executive_summary(summary):
+    """
+    Menampilkan ringkasan eksekutif dengan layout baru yang lebih intuitif,
+    menempatkan rincian skor di sebelah status dan menambahkan legenda.
+    """
+    
+    st.subheader("Ringkasan Eksekutif")
+    
+    with st.container(border=True):
+        # --- BLOK UTAMA YANG DIUBAH ---
+        # Kita gunakan 2 kolom untuk menampilkan status, legenda, dan rincian skor secara berdampingan.
+        col1, col2 = st.columns(2, gap="large")
+
+        with col1:
+            # 1. Menampilkan Status Kesehatan Utama
+            st.markdown("##### Status Kesehatan Bisnis")
+            delta_text = f"{summary['yoy_change']:.1%}" if summary['yoy_change'] is not None else None
+            st.metric(
+                label=summary['health_status'], 
+                value=f"Total Skor: {sum(item['total'] for item in summary['score_details'].values())}",
+                delta=f"{delta_text} vs Tahun Lalu" if delta_text else None,
+                delta_color="normal"
+            )
+            st.markdown("---")
+            
+            # 2. Menampilkan Legenda Skor
+            st.markdown("##### Legenda Skor")
+            st.markdown(
+                """
+                - <span style='color:green; font-weight:bold;'>Sangat Baik</span> : Skor > 4
+                - <span style='color:green; font-weight:bold;'>Baik</span> : Skor 1 s.d. 4
+                - <span style='color:orange; font-weight:bold;'>Perlu Perhatian</span> : Skor -3 s.d. 0
+                - <span style='color:red; font-weight:bold;'>Waspada</span> : Skor < -4
+                """,
+                unsafe_allow_html=True
+            )
+
+        with col2:
+            # 3. Menampilkan Rincian Analisis Skor secara langsung
+            st.markdown("##### Rincian Analisis Skor")
+            for metric, details in summary['score_details'].items():
+                score = details['total']
+                emoji = "➡️"
+                if score > 0: emoji = "📈"
+                elif score < 0: emoji = "📉"
+                
+                st.markdown(f"**{metric}: `{score}` Poin** {emoji}")
+                
+                tren_text = f"*- Tren Jk. Panjang: `{details['tren_jangka_panjang']}`*"
+                momentum_text = f"*- Momentum Jk. Pendek: `{details['momentum_jangka_pendek']}`*"
+
+                if details['tren_jangka_panjang'] == 2: tren_text += " *(Naik Signifikan)*"
+                if details['tren_jangka_panjang'] == -2: tren_text += " *(Turun Signifikan)*"
+                if details['momentum_jangka_pendek'] == 1: momentum_text += " *(Positif)*"
+                if details['momentum_jangka_pendek'] == -1: momentum_text += " *(Melambat)*"
+
+                st.markdown(f"<small>{tren_text}<br>{momentum_text}</small>", unsafe_allow_html=True)
+        
+        # --- AKHIR BLOK UTAMA YANG DIUBAH ---
+
+        # Detail lainnya tetap berada di dalam expander
+        with st.expander("🔍 Lihat Narasi Lengkap & Rekomendasi Aksi"):
+            st.markdown("**Narasi Tren Utama (Penjualan):**")
+            st.write(summary['trend_narrative'])
+            
+            if summary.get('health_context_narrative'):
+                st.markdown(summary['health_context_narrative'])
+
+            st.markdown("---")
+            
+            if summary['recommendations']:
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                for rec in summary['recommendations']:
+                    st.markdown(f"- {rec}")
+            else:
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
+
+            st.markdown("---")
+            st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
+            
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
 # ==============================================================================
