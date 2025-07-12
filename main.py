@@ -1501,7 +1501,7 @@ def draft_display_executive_summary(summary):
             st.markdown("---")
             st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
 
-def display_executive_summary(summary):
+def draft2_display_executive_summary(summary):
     """
     Menampilkan ringkasan eksekutif dengan layout baris tunggal yang jernih,
     menggunakan kolom-mini untuk memisahkan metrik skor secara visual.
@@ -1593,7 +1593,93 @@ def display_executive_summary(summary):
 
             st.markdown("---")
             st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
+
+def display_executive_summary(summary):
+    """
+    Menampilkan ringkasan eksekutif dengan layout baris tunggal yang jernih,
+    menggunakan kolom-mini untuk memisahkan metrik skor secara visual.
+    """
+    
+    # --- Fungsi Bantuan (Helper Function) untuk membuat panah ---
+    def format_score_with_arrows(score):
+        if score >= 2: return "<span style='color:green; font-size:1.1em;'>↑↑</span>"
+        if score == 1: return "<span style='color:green; font-size:1.1em;'>↑</span>"
+        if score == 0: return "<span style='color:blue; font-size:1.1em;'>→</span>"
+        if score == -1: return "<span style='color:red; font-size:1.1em;'>↓</span>"
+        if score <= -2: return "<span style='color:red; font-size:1.1em;'>↓↓</span>"
+        return ""
+
+    st.subheader("Ringkasan Eksekutif")
+    
+    with st.container(border=True):
+        col1, col2, col3 = st.columns([1.5, 1.2, 2.3])
+
+        # (KOLOM 1 dan KOLOM 2 tidak ada perubahan)
+        with col1:
+            st.markdown("Status Kesehatan Bisnis")
+            status = summary['health_status']
+            color = summary['health_color']
+            st.markdown(f'<div style="background-color:{color}; color:white; font-weight:bold; padding: 10px; border-radius: 7px; text-align:center;">{status.upper()}</div>', unsafe_allow_html=True)
+
+        with col2:
+            st.markdown("Performa YoY")
+            yoy_change = summary.get('yoy_change')
+            if yoy_change is not None:
+                display_val = f"<h3 style='color:green; margin:0;'>↑ {yoy_change:.1%}</h3>" if yoy_change > 0 else f"<h3 style='color:red; margin:0;'>↓ {abs(yoy_change):.1%}</h3>"
+            else:
+                display_val = "<h3 style='margin:0;'>N/A</h3>"
+            st.markdown(display_val, unsafe_allow_html=True)
+            st.caption("vs. Tahun Lalu")
+
+        # KOLOM 3: Analisis Skor dalam Baris Tunggal yang Terstruktur
+        with col3:
+            st.markdown("Analisis Skor Kesehatan")
             
+            sub_col1, sub_col2, sub_col3 = st.columns(3)
+            
+            metrics_to_display = ['Penjualan', 'Transaksi', 'AOV']
+            columns_to_use = [sub_col1, sub_col2, sub_col3]
+
+            for metric_name, sub_col in zip(metrics_to_display, columns_to_use):
+                with sub_col:
+                    details = summary['score_details'].get(metric_name)
+                    if details:
+                        total_arrow = format_score_with_arrows(details['total'])
+                        trend_arrow = format_score_with_arrows(details['tren_jangka_panjang'])
+                        momentum_arrow = format_score_with_arrows(details['momentum_jangka_pendek'])
+                        
+                        # --- INI BLOK YANG DIPERBAIKI ---
+                        # Menggabungkan semua elemen ke dalam satu panggilan st.markdown
+                        # untuk menghilangkan spasi vertikal antar elemen.
+                        combined_html = f"""
+                        <div style="line-height: 1.2;">
+                            <strong>{metric_name}</strong><br>
+                            <span style="font-size: 2em; font-weight: bold;">{total_arrow}</span><br>
+                            <small>T: {trend_arrow}, M: {momentum_arrow}</small>
+                        </div>
+                        """
+                        st.markdown(combined_html, unsafe_allow_html=True)
+
+        with st.expander("🔍 Lihat Narasi Lengkap & Rekomendasi Aksi"):
+            st.markdown("**Narasi Tren Utama (Penjualan):**")
+            st.write(summary['trend_narrative'])
+            
+            if summary.get('health_context_narrative'):
+                st.markdown(summary['health_context_narrative'])
+
+            st.markdown("---")
+            
+            if summary['recommendations']:
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                for rec in summary['recommendations']:
+                    st.markdown(f"- {rec}")
+            else:
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
+
+            st.markdown("---")
+            st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
+
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
 # ==============================================================================
