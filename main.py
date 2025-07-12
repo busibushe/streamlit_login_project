@@ -1,4 +1,3 @@
-# succss trnd and prformanc
 import os
 import streamlit as st
 import streamlit_authenticator as stauth
@@ -6,9 +5,11 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 import scipy.stats as stats
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
 
 # ==============================================================================
-# KONFIGURASI HALAMAN & FUNGSI-FUNGSI
+# KONFIGURASI HALAMAN
 # ==============================================================================
 
 st.set_page_config(
@@ -17,10 +18,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- FUNGSI-FUNGSI UTAMA ---
+# ==============================================================================
+# FUNGSI-FUNGSI UTAMA
+# ==============================================================================
 
 @st.cache_data
 def load_raw_data(file):
+    """Memuat data mentah dari file yang diunggah tanpa modifikasi."""
     try:
         if file.name.endswith('.csv'):
             df = pd.read_csv(file, low_memory=False)
@@ -31,43 +35,61 @@ def load_raw_data(file):
         raise ValueError(f"Gagal memuat file: {e}")
 
 def reset_processing_state():
-    """Callback untuk mereset state jika file diubah."""
+    """Callback untuk mereset state jika file diubah, memastikan UI tetap sinkron."""
     st.session_state.data_processed = False
     for key in list(st.session_state.keys()):
         if key.startswith("map_"):
             del st.session_state[key]
 
-# (Anda bisa menempelkan fungsi-fungsi analisis lainnya di sini jika mau, atau biarkan seperti ini)
 def analyze_trend_v3(df_monthly, metric_col, metric_label):
-    if len(df_monthly.dropna(subset=[metric_col])) < 3: return {'narrative': "Data tidak cukup untuk analisis tren."}
+    """Menganalisis tren dengan wawasan bisnis F&B: Tren Linear, YoY, dan Momentum."""
+    if len(df_monthly.dropna(subset=[metric_col])) < 3:
+        return {'narrative': "Data tidak cukup untuk analisis tren (dibutuhkan minimal 3 bulan)."}
+    
     df = df_monthly.dropna(subset=[metric_col]).copy()
-    if len(set(df[metric_col])) <= 1: return {'narrative': "Data konstan, tidak ada tren."}
+    if len(set(df[metric_col])) <= 1:
+        return {'narrative': "Data konstan, tidak ada tren yang bisa dianalisis."}
+
     df['x_val'] = np.arange(len(df))
     slope, intercept, r_value, p_value, std_err = stats.linregress(df['x_val'], df[metric_col])
     trendline = slope * df['x_val'] + intercept
-    trend_type = f"**{'meningkat' if slope > 0 else 'menurun'}** signifikan" if p_value < 0.05 else "stabil/fluktuatif"
+    trend_type = "stabil/fluktuatif"
+    if p_value < 0.05:
+        trend_type = f"**{'meningkat' if slope > 0 else 'menurun'}** secara signifikan"
+
     yoy_narrative = ""
     if len(df) >= 13:
-        last_val, yoy_val = df.iloc[-1][metric_col], df.iloc[-13][metric_col]
+        last_val = df.iloc[-1][metric_col]
+        yoy_val = df.iloc[-13][metric_col]
         if yoy_val > 0:
             yoy_change = (last_val - yoy_val) / yoy_val
-            yoy_narrative = f" Dibandingkan bulan yang sama tahun lalu, performa **{'tumbuh' if yoy_change > 0 else 'menurun'} {abs(yoy_change):.1%}**."
+            yoy_performance = f"**tumbuh {yoy_change:.1%}**" if yoy_change > 0 else f"**menurun {abs(yoy_change):.1%}**"
+            yoy_narrative = f" Dibandingkan bulan yang sama tahun lalu, performa bulan terakhir {yoy_performance}."
+
     ma_line, momentum_narrative = None, ""
     if len(df) >= 4:
         ma_line = df[metric_col].rolling(window=3, min_periods=1).mean()
-        momentum_narrative = " Momentum jangka pendek terlihat **positif**." if ma_line.iloc[-1] > ma_line.iloc[-2] else " Momentum jangka pendek menunjukkan **perlambatan**."
-    max_perf_month, min_perf_month = df.loc[df[metric_col].idxmax()], df.loc[df[metric_col].idxmin()]
-    extrema_narrative = f" Puncak performa terjadi pada **{max_perf_month['Bulan'].strftime('%B %Y')}** dan titik terendah pada **{min_perf_month['Bulan'].strftime('%B %Y')}**."
-    return {'narrative': f"Tren {metric_label} cenderung {trend_type}.{momentum_narrative}{yoy_narrative}{extrema_narrative}", 'trendline': trendline, 'ma_line': ma_line, 'p_value': p_value}
+        momentum_narrative = " Momentum jangka pendek (3 bulan terakhir) terlihat **positif**." if ma_line.iloc[-1] > ma_line.iloc[-2] else " Momentum jangka pendek menunjukkan **perlambatan**."
+
+    max_perf_month = df.loc[df[metric_col].idxmax()]
+    min_perf_month = df.loc[df[metric_col].idxmin()]
+    extrema_narrative = f" Performa tertinggi tercatat pada **{max_perf_month['Bulan'].strftime('%B %Y')}** dan terendah pada **{min_perf_month['Bulan'].strftime('%B %Y')}**."
+
+    full_narrative = f"Secara keseluruhan, tren {metric_label} cenderung {trend_type}.{momentum_narrative}{yoy_narrative}{extrema_narrative}"
+    
+    return {'narrative': full_narrative, 'trendline': trendline, 'ma_line': ma_line, 'p_value': p_value}
 
 def display_analysis_with_details_v3(title, analysis_result):
-    st.info(f"💡 **Analisis Tren {title}:** {analysis_result.get('narrative', 'N/A')}")
+    """Menampilkan narasi analisis dan detail p-value dalam expander."""
+    st.info(f"💡 **Analisis Tren {title}:** {analysis_result.get('narrative', 'Analisis tidak tersedia.')}")
     p_value = analysis_result.get('p_value')
     if p_value is not None:
-        with st.expander("Lihat detail signifikansi statistik"):
-            st.markdown(f"**P-value:** `{p_value:.4f}`. Ini berarti ada **`{p_value:.2%}`** kemungkinan melihat pola ini hanya karena kebetulan.")
-            if p_value < 0.05: st.success("✔️ Tren ini **nyata secara statistik**.")
-            else: st.warning("⚠️ Tren ini **tidak signifikan secara statistik**.")
+        with st.expander("Lihat penjelasan signifikansi statistik (p-value)"):
+            st.markdown(f"**Nilai p-value** tren ini adalah **`{p_value:.4f}`**. Angka ini berarti ada **`{p_value:.2%}`** kemungkinan melihat pola ini hanya karena kebetulan.")
+            if p_value < 0.05:
+                st.success("✔️ Karena kemungkinan kebetulan rendah (< 5%), tren ini dianggap **nyata secara statistik**.")
+            else:
+                st.warning("⚠️ Karena kemungkinan kebetulan cukup tinggi (≥ 5%), tren ini **tidak signifikan secara statistik**.")
     st.markdown("---")
 
 def create_channel_analysis(df):
@@ -77,43 +99,35 @@ def create_channel_analysis(df):
         st.warning("Kolom 'Visit Purpose' tidak dipetakan. Analisis saluran penjualan tidak tersedia.")
         return
 
-    # --- PERBAIKAN: Layout diubah menjadi 2 kolom agar sejajar ---
     col1, col2 = st.columns(2)
-    
     with col1:
         channel_sales = df.groupby('Visit Purpose')['Nett Sales'].sum().sort_values(ascending=False)
-        fig = px.pie(channel_sales, values='Nett Sales', names=channel_sales.index, 
-                     title="Kontribusi Penjualan per Saluran", hole=0.4)
+        fig = px.pie(channel_sales, values='Nett Sales', names=channel_sales.index, title="Kontribusi Penjualan per Saluran", hole=0.4)
         fig.update_layout(legend_title_text='Saluran')
         st.plotly_chart(fig, use_container_width=True)
-
     with col2:
         agg_data = df.groupby('Visit Purpose').agg(TotalSales=('Nett Sales', 'sum'), TotalBills=('Bill Number', 'nunique'))
         agg_data['AOV'] = agg_data['TotalSales'] / agg_data['TotalBills']
         aov_by_channel = agg_data['AOV'].sort_values(ascending=False)
         fig2 = px.bar(aov_by_channel, x=aov_by_channel.index, y=aov_by_channel.values,
-                      labels={'y': 'Rata-rata Nilai Pesanan (AOV)', 'x': 'Saluran'}, 
-                      title="AOV per Saluran Penjualan")
+                      labels={'y': 'Rata-rata Nilai Pesanan (AOV)', 'x': 'Saluran'}, title="AOV per Saluran Penjualan")
         st.plotly_chart(fig2, use_container_width=True)
         
-    # --- PERBAIKAN: Menambahkan komentar bisnis & rekomendasi aksi ---
-    highest_aov_channel = aov_by_channel.index[0]
-    highest_contrib_channel = channel_sales.index[0]
+    if not aov_by_channel.empty and not channel_sales.empty:
+        highest_aov_channel = aov_by_channel.index[0]
+        highest_contrib_channel = channel_sales.index[0]
+        st.info(f"""
+        **Insight Bisnis:**
+        - **Kontributor Terbesar:** Saluran **{highest_contrib_channel}** adalah penyumbang pendapatan terbesar Anda. Prioritaskan operasional dan promosi untuk saluran ini.
+        - **Nilai Pesanan Tertinggi:** Pelanggan dari saluran **{highest_aov_channel}** cenderung menghabiskan lebih banyak per transaksi. Pertimbangkan untuk memberikan penawaran eksklusif atau program loyalitas untuk segmen ini guna meningkatkan frekuensi kunjungan mereka.
+        """)
 
-    st.info(f"""
-    **Insight Bisnis:**
-    - **Kontributor Terbesar:** Saluran **{highest_contrib_channel}** adalah penyumbang pendapatan terbesar Anda. Prioritaskan operasional dan promosi untuk saluran ini.
-    - **Nilai Pesanan Tertinggi:** Pelanggan dari saluran **{highest_aov_channel}** cenderung menghabiskan lebih banyak per transaksi. Pertimbangkan untuk memberikan penawaran eksklusif atau program loyalitas untuk segmen ini guna meningkatkan frekuensi kunjungan mereka.
-    """)
-
-# GANTI fungsi create_menu_engineering_chart yang lama dengan versi baru ini
 def create_menu_engineering_chart(df):
     """Membuat visualisasi kuadran untuk menu engineering dengan insight bisnis."""
     st.subheader("🔬 Analisis Performa Menu (Menu Engineering)")
     menu_perf = df.groupby('Menu').agg(Qty=('Qty', 'sum'), NettSales=('Nett Sales', 'sum')).reset_index()
-    if len(menu_perf) < 4: # Butuh setidaknya 4 item untuk analisis kuadran yang berarti
-        st.warning("Data menu tidak cukup untuk analisis kuadran yang berarti.")
-        return
+    if len(menu_perf) < 4:
+        st.warning("Data menu tidak cukup untuk analisis kuadran yang berarti."); return
 
     avg_qty, avg_sales = menu_perf['Qty'].mean(), menu_perf['NettSales'].mean()
     show_text = len(menu_perf) < 75 
@@ -123,14 +137,10 @@ def create_menu_engineering_chart(df):
                      labels={'Qty': 'Total Kuantitas Terjual', 'NettSales': 'Total Penjualan Bersih (Rp)'},
                      size='NettSales', color='NettSales', hover_name='Menu')
     
-    fig.add_shape(type="rect", x0=avg_qty, y0=avg_sales, x1=fig.data[0].x.max(), y1=fig.data[0].y.max(),
-                  fillcolor="lightgreen", opacity=0.2, layer="below", line_width=0)
-    fig.add_shape(type="rect", x0=df['Qty'].min(), y0=avg_sales, x1=avg_qty, y1=fig.data[0].y.max(),
-                  fillcolor="lightblue", opacity=0.2, layer="below", line_width=0)
-    fig.add_shape(type="rect", x0=avg_qty, y0=df['Nett Sales'].min(), x1=fig.data[0].x.max(), y1=avg_sales,
-                  fillcolor="lightyellow", opacity=0.2, layer="below", line_width=0)
-    fig.add_shape(type="rect", x0=df['Qty'].min(), y0=df['Nett Sales'].min(), x1=avg_qty, y1=avg_sales,
-                  fillcolor="lightcoral", opacity=0.2, layer="below", line_width=0)
+    fig.add_shape(type="rect", x0=avg_qty, y0=avg_sales, x1=menu_perf['Qty'].max(), y1=menu_perf['NettSales'].max(), fillcolor="lightgreen", opacity=0.2, layer="below", line_width=0)
+    fig.add_shape(type="rect", x0=menu_perf['Qty'].min(), y0=avg_sales, x1=avg_qty, y1=menu_perf['NettSales'].max(), fillcolor="lightblue", opacity=0.2, layer="below", line_width=0)
+    fig.add_shape(type="rect", x0=avg_qty, y0=menu_perf['NettSales'].min(), x1=menu_perf['Qty'].max(), y1=avg_sales, fillcolor="lightyellow", opacity=0.2, layer="below", line_width=0)
+    fig.add_shape(type="rect", x0=menu_perf['Qty'].min(), y0=menu_perf['NettSales'].min(), x1=avg_qty, y1=avg_sales, fillcolor="lightcoral", opacity=0.2, layer="below", line_width=0)
     
     fig.add_vline(x=avg_qty, line_dash="dash", line_color="gray")
     fig.add_hline(y=avg_sales, line_dash="dash", line_color="gray")
@@ -143,29 +153,23 @@ def create_menu_engineering_chart(df):
         
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- PERBAIKAN: Menambahkan komentar bisnis & rekomendasi aksi ---
     stars = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] > avg_sales)]
     workhorses = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] <= avg_sales)]
     
     insight_text = "**Rekomendasi Aksi:**\n"
     if not stars.empty:
         top_star = stars.nlargest(1, 'NettSales')['Menu'].iloc[0]
-        insight_text += f"- **Fokuskan Promosi:** Menu **'{top_star}'** adalah Bintang (Star) utama Anda. Jadikan menu ini sebagai pusat promosi dan pastikan ketersediaannya.\n"
+        insight_text += f"- **Fokuskan Promosi:** Menu **'{top_star}'** adalah Bintang (Star) utama Anda. Jadikan pusat promosi.\n"
     if not workhorses.empty:
         top_workhorse = workhorses.nlargest(1, 'Qty')['Menu'].iloc[0]
-        insight_text += f"- **Peluang Profit:** Menu **'{top_workhorse}'** sangat populer (Workhorse) namun kontribusi penjualannya di bawah rata-rata. Coba buat paket bundling atau naikkan harganya sedikit untuk meningkatkan profitabilitas."
+        insight_text += f"- **Peluang Profit:** Menu **'{top_workhorse}'** sangat populer (Workhorse). Coba naikkan harga atau buat paket bundling."
     
-    st.info(insight_text)
+    if len(insight_text) > 20: st.info(insight_text)
     
-    st.info("""
-    **Cara Membaca Kuadran:**
-    - **Hijau (STARS 🌟):** Juara Anda! Populer dan menguntungkan.
-    - **Kuning (WORKHORSES 🐴):** Populer tapi kurang profit.
-    - **Biru (PUZZLES 🤔):** Sangat profit tapi jarang dipesan.
-    - **Merah (DOGS 🐶):** Kurang populer & profit.
-    """)
+    st.info("""**Cara Membaca Kuadran:**
+- **Hijau (STARS 🌟):** Juara Anda. | **Kuning (WORKHORSES 🐴):** Populer, kurang profit.
+- **Biru (PUZZLES 🤔):** Profit, kurang populer. | **Merah (DOGS 🐶):** Kurang populer & profit.""")
 
-# GANTI fungsi create_operational_efficiency_analysis yang lama dengan versi baru ini
 def create_operational_efficiency_analysis(df):
     """Membuat visualisasi efisiensi dengan korelasi jumlah transaksi dan insight."""
     st.subheader("⏱️ Analisis Efisiensi Operasional")
@@ -192,14 +196,7 @@ def create_operational_efficiency_analysis(df):
 
     if 'Order Time' in df_eff.columns and not df_eff['Order Time'].isnull().all():
         df_eff['Hour'] = pd.to_datetime(df_eff['Order Time'].astype(str), errors='coerce').dt.hour
-        
-        agg_by_hour = df_eff.groupby('Hour').agg(
-            AvgPrepTime=('Prep Time (Seconds)', 'mean'),
-            TotalTransactions=('Bill Number', 'nunique')
-        ).reset_index()
-
-        from plotly.subplots import make_subplots
-        import plotly.graph_objects as go
+        agg_by_hour = df_eff.groupby('Hour').agg(AvgPrepTime=('Prep Time (Seconds)', 'mean'), TotalTransactions=('Bill Number', 'nunique')).reset_index()
         
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         fig.add_trace(go.Bar(x=agg_by_hour['Hour'], y=agg_by_hour['TotalTransactions'], name="Jumlah Transaksi"), secondary_y=False)
@@ -209,21 +206,15 @@ def create_operational_efficiency_analysis(df):
         fig.update_xaxes(title_text="Jam dalam Sehari")
         fig.update_yaxes(title_text="<b>Jumlah Transaksi</b> (Batang)", secondary_y=False)
         fig.update_yaxes(title_text="<b>Rata-rata Waktu Persiapan (Detik)</b> (Garis)", secondary_y=True)
-
         st.plotly_chart(fig, use_container_width=True)
         
-        # --- PERBAIKAN: Menambahkan komentar bisnis & rekomendasi aksi ---
         if not agg_by_hour.empty:
             peak_visitor_hour = agg_by_hour.loc[agg_by_hour['TotalTransactions'].idxmax()]
             longest_prep_hour = agg_by_hour.loc[agg_by_hour['AvgPrepTime'].idxmax()]
-            
-            st.info(f"""
-            **Insight Bisnis:**
-            - **Jam Puncak Pengunjung:** Kepadatan tertinggi terjadi pada jam **{int(peak_visitor_hour['Hour'])}:00**, dengan **{int(peak_visitor_hour['TotalTransactions'])}** transaksi.
-            - **Layanan Melambat:** Waktu persiapan terlama terjadi pada jam **{int(longest_prep_hour['Hour'])}:00**.
-            
-            **Rekomendasi Aksi:** Jika jam layanan melambat **sama atau berdekatan** dengan jam puncak pengunjung, ini adalah sinyal kuat bahwa dapur Anda kewalahan. Pertimbangkan untuk menambah staf atau menyederhanakan menu pada jam-jam krusial tersebut untuk menjaga kepuasan pelanggan.
-            """)
+            st.info(f"""**Insight Bisnis:**
+- **Jam Puncak Pengunjung:** Jam **{int(peak_visitor_hour['Hour'])}:00**, dengan **{int(peak_visitor_hour['TotalTransactions'])}** transaksi.
+- **Layanan Melambat:** Jam **{int(longest_prep_hour['Hour'])}:00**.
+**Rekomendasi Aksi:** Jika jam layanan melambat **sama atau berdekatan** dengan jam puncak, ini adalah sinyal kuat dapur Anda kewalahan. Pertimbangkan untuk menambah staf atau menyederhanakan menu pada jam-jam krusial tersebut.""")
 
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
@@ -235,7 +226,8 @@ name, auth_status, username = authenticator.login("Login", "main")
 if auth_status is False: st.error("Username atau password salah.")
 elif auth_status is None: st.warning("Silakan masukkan username dan password.")
 elif auth_status:
-    if 'data_processed' not in st.session_state: st.session_state.data_processed = False
+    if 'data_processed' not in st.session_state:
+        st.session_state.data_processed = False
 
     if os.path.exists("logo.png"): st.sidebar.image("logo.png", width=150)
     authenticator.logout("Logout", "sidebar")
@@ -243,15 +235,12 @@ elif auth_status:
     st.sidebar.title("📤 Unggah & Konfigurasi")
 
     uploaded_sales_file = st.sidebar.file_uploader(
-        "1. Unggah File Penjualan Detail",
-        type=["xlsx", "xls", "csv"],
-        key="sales_uploader",
-        on_change=reset_processing_state # INI ADALAH PERBAIKAN UTAMA
+        "1. Unggah File Penjualan Detail", type=["xlsx", "xls", "csv"],
+        key="sales_uploader", on_change=reset_processing_state
     )
     
     if uploaded_sales_file is None:
-        st.info("👋 Selamat datang! Silakan unggah file data penjualan Anda untuk memulai analisis.")
-        st.stop()
+        st.info("👋 Selamat datang! Silakan unggah file data penjualan Anda untuk memulai analisis."); st.stop()
 
     df_raw = load_raw_data(uploaded_sales_file)
     
@@ -262,8 +251,9 @@ elif auth_status:
     
     def find_best_match(col_list, keywords):
         for col in col_list:
-            for keyword in keywords:
-                if keyword in col.lower().replace("_", "").replace(" ", ""): return col
+            if col and isinstance(col, str):
+                for keyword in keywords:
+                    if keyword in col.lower().replace("_", "").replace(" ", ""): return col
         return None
 
     with st.sidebar.expander("Atur Kolom Wajib", expanded=not st.session_state.data_processed):
@@ -280,66 +270,45 @@ elif auth_status:
             if user_selection: user_mapping[internal_name] = user_selection
 
     if st.sidebar.button("✅ Terapkan dan Proses Data", type="primary"):
-        # Validasi 1: Pastikan semua kolom wajib telah dipetakan
-        mapped_req_cols = [user_mapping.get(internal_name) for internal_name in REQUIRED_COLS_MAP.keys()]
+        mapped_req_cols = [user_mapping.get(k) for k in REQUIRED_COLS_MAP.keys()]
         if not all(mapped_req_cols):
-            st.error("❌ Harap petakan semua kolom WAJIB diisi sebelum memproses data.")
-            st.stop()
+            st.error("❌ Harap petakan semua kolom WAJIB diisi."); st.stop()
         
-        # Validasi 2: Pastikan pengguna tidak memilih kolom yang sama untuk peran yang berbeda
-        chosen_cols = [col for col in user_mapping.values() if col]
+        chosen_cols = [c for c in user_mapping.values() if c]
         if len(chosen_cols) != len(set(chosen_cols)):
-            st.error("❌ Terdeteksi satu kolom dipilih untuk beberapa peran berbeda. Harap periksa kembali pemetaan Anda.")
-            st.stop()
+            st.error("❌ Terdeteksi satu kolom dipilih untuk beberapa peran berbeda."); st.stop()
 
         try:
-            # --- MULAI: Logika pemrosesan yang hilang ---
-            # Membuat DataFrame baru yang bersih, bukan me-rename.
             df = pd.DataFrame()
             for internal_name, source_col in user_mapping.items():
-                if source_col: 
-                    df[internal_name] = df_raw[source_col]
+                if source_col: df[internal_name] = df_raw[source_col]
 
-            # 1. Proses Kolom Teks (String)
             df['Menu'] = df['Menu'].fillna('N/A').astype(str)
             df['Branch'] = df['Branch'].fillna('Tidak Diketahui').astype(str)
             if 'Visit Purpose' in df.columns: df['Visit Purpose'] = df['Visit Purpose'].fillna('N/A').astype(str)
             if 'Payment Method' in df.columns: df['Payment Method'] = df['Payment Method'].fillna('N/A').astype(str)
-
-            # 2. Proses Kolom Tanggal & Waktu
             df['Sales Date'] = pd.to_datetime(df['Sales Date'], errors='coerce')
             if 'Sales Date In' in df.columns: df['Sales Date In'] = pd.to_datetime(df['Sales Date In'], errors='coerce')
             if 'Sales Date Out' in df.columns: df['Sales Date Out'] = pd.to_datetime(df['Sales Date Out'], errors='coerce')
-            if 'Order Time' in df.columns:
-                # Coba konversi ke time, jika gagal biarkan NaT (Not a Time)
-                df['Order Time'] = pd.to_datetime(df['Order Time'], errors='coerce').dt.time
-            
-            # 3. Proses Kolom Numerik
+            if 'Order Time' in df.columns: df['Order Time'] = pd.to_datetime(df['Order Time'], errors='coerce', format='mixed').dt.time
             numeric_cols = ['Qty', 'Nett Sales'] 
             for col in numeric_cols:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                 if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
-            # Simpan DataFrame yang sudah jadi dan set status menjadi 'telah diproses'
             st.session_state.df_processed = df 
             st.session_state.data_processed = True
-            st.rerun() # Jalankan ulang skrip untuk menampilkan dasbor
+            st.rerun()
 
         except Exception as e:
-            st.error(f"❌ Terjadi kesalahan saat memproses data: {e}")
-            st.stop()
+            st.error(f"❌ Terjadi kesalahan saat memproses data: {e}"); st.stop()
 
-    # ==============================================================================
-    # BAGIAN UTAMA DASBOR (Tampil setelah data diproses)
-    # ==============================================================================
     if st.session_state.data_processed:
         df_processed = st.session_state.df_processed
         
         st.sidebar.title("⚙️ Filter Global")
         unique_branches = sorted(df_processed['Branch'].unique())
         selected_branch = st.sidebar.selectbox("Pilih Cabang", unique_branches)
-        min_date = df_processed['Sales Date'].dt.date.min()
-        max_date = df_processed['Sales Date'].dt.date.max()
+        min_date, max_date = df_processed['Sales Date'].dt.date.min(), df_processed['Sales Date'].dt.date.max()
         date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 
         if len(date_range) != 2: st.stop()
@@ -352,8 +321,7 @@ elif auth_status:
         ]
         
         if df_filtered.empty:
-            st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih.")
-            st.stop()
+            st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih."); st.stop()
             
         st.title(f"Dashboard Holistik: {selected_branch}")
         st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
@@ -377,47 +345,22 @@ elif auth_status:
 
                 kpi_cols = st.columns(3)
                 last_month = monthly_agg.iloc[-1]
-                # Tentukan prev_month dengan cara yang aman
                 prev_month = monthly_agg.iloc[-2] if len(monthly_agg) >= 2 else None
 
                 def display_kpi(col, title, current_val, prev_val, help_text, is_currency=True):
-                    """Fungsi helper yang lebih tangguh untuk menampilkan metrik KPI."""
-                    if pd.isna(current_val):
-                        col.metric(title, "N/A"); return
-                    
+                    if pd.isna(current_val): col.metric(title, "N/A"); return
                     delta = 0
-                    # Pengecekan 'is not None' untuk menghindari ambiguitas
                     if prev_val is not None and pd.notna(prev_val) and prev_val > 0:
                         delta = (current_val - prev_val) / prev_val
-                    
                     val_format = f"Rp {current_val:,.0f}" if is_currency else f"{current_val:,.2f}".rstrip('0').rstrip('.')
                     delta_display = f"{delta:.1%}" if prev_val is not None and pd.notna(prev_val) else None
-                    
                     col.metric(title, val_format, delta_display, help=help_text if delta_display else None)
 
-                # Definisikan help_str dengan pengecekan yang aman
                 help_str = f"Dibandingkan bulan {prev_month['Bulan'].strftime('%b %Y')}" if prev_month is not None else ""
-
-                # Panggilan fungsi dengan pengecekan 'is not None' yang benar dan eksplisit
-                display_kpi(
-                    kpi_cols[0], "💰 Penjualan Bulanan", 
-                    last_month.get('TotalMonthlySales'), 
-                    prev_month.get('TotalMonthlySales') if prev_month is not None else None, 
-                    help_str, True
-                )
-                display_kpi(
-                    kpi_cols[1], "🛒 Transaksi Bulanan", 
-                    last_month.get('TotalTransactions'), 
-                    prev_month.get('TotalTransactions') if prev_month is not None else None, 
-                    help_str, False
-                )
-                display_kpi(
-                    kpi_cols[2], "💳 AOV Bulanan", 
-                    last_month.get('AOV'), 
-                    prev_month.get('AOV') if prev_month is not None else None, 
-                    help_str, True
-                )
-
+                display_kpi(kpi_cols[0], "💰 Penjualan Bulanan", last_month.get('TotalMonthlySales'), prev_month.get('TotalMonthlySales') if prev_month is not None else None, help_str, True)
+                display_kpi(kpi_cols[1], "🛒 Transaksi Bulanan", last_month.get('TotalTransactions'), prev_month.get('TotalTransactions') if prev_month is not None else None, help_str, False)
+                display_kpi(kpi_cols[2], "💳 AOV Bulanan", last_month.get('AOV'), prev_month.get('AOV') if prev_month is not None else None, help_str, True)
+                
                 st.markdown("---")
 
                 def create_trend_chart_v3(df_data, y_col, y_label, color):
