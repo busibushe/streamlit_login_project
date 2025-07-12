@@ -1456,10 +1456,8 @@ def display_executive_summary(summary):
         with col3:
             st.markdown("Analisis Skor Kesehatan")
             
-            # --- PERUBAHAN UTAMA: Gunakan 3 kolom-mini untuk kejelasan ---
             sub_col1, sub_col2, sub_col3 = st.columns(3)
             
-            # Daftar metrik untuk iterasi yang lebih rapi
             metrics_to_display = ['Penjualan', 'Transaksi', 'AOV']
             columns_to_use = [sub_col1, sub_col2, sub_col3]
 
@@ -1473,7 +1471,11 @@ def display_executive_summary(summary):
                         
                         st.markdown(f"**{metric_name}**")
                         st.markdown(f"<h2>{total_arrow}</h2>", unsafe_allow_html=True)
-                        st.caption(f"T: {trend_arrow}, M: {momentum_arrow}")
+                        
+                        # --- INI BARIS YANG DIPERBAIKI ---
+                        # Mengganti st.caption dengan st.markdown dan tag <small>
+                        caption_text = f"<small>T: {trend_arrow}, M: {momentum_arrow}</small>"
+                        st.markdown(caption_text, unsafe_allow_html=True)
 
         # --- Detail lainnya tetap di dalam expander ---
         with st.expander("🔍 Lihat Narasi Lengkap & Rekomendasi Aksi"):
@@ -1496,7 +1498,6 @@ def display_executive_summary(summary):
 
             st.markdown("---")
             st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
-
 
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
