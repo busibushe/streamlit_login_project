@@ -212,13 +212,46 @@ def create_operational_efficiency_analysis(df):
         fig.update_yaxes(title_text="<b>Rata-rata Waktu Persiapan (Detik)</b> (Garis)", secondary_y=True)
         st.plotly_chart(fig, use_container_width=True)
         
-        if not agg_by_hour.empty:
-            peak_visitor_hour = agg_by_hour.loc[agg_by_hour['TotalTransactions'].idxmax()]
-            longest_prep_hour = agg_by_hour.loc[agg_by_hour['AvgPrepTime'].idxmax()]
-            st.info(f"""**Insight Bisnis:**
-- **Jam Puncak Pengunjung:** Jam **{int(peak_visitor_hour['Hour'])}:00**, dengan **{int(peak_visitor_hour['TotalTransactions'])}** transaksi.
-- **Layanan Melambat:** Jam **{int(longest_prep_hour['Hour'])}:00**.
-**Rekomendasi Aksi:** Jika jam layanan melambat **sama atau berdekatan** dengan jam puncak, ini adalah sinyal kuat adanya kewalahan. Pertimbangkan untuk menambah staf atau menyederhanakan menu pada jam-jam krusial tersebut jika waktu persiapan melebihi toleransi.""")
+        # Tambahkan ini di akhir fungsi create_operational_efficiency_analysis
+        if not agg_by_hour.empty and len(agg_by_hour) > 2:
+            # --- PERBAIKAN: Menambahkan analisis korelasi statistik ---
+            st.subheader("🔬 Uji Statistik Korelasi")
+            
+            # Pilih Korelasi Spearman karena lebih robust
+            correlation, p_value = stats.spearmanr(agg_by_hour['TotalTransactions'], agg_by_hour['AvgPrepTime'])
+            
+            col1, col2 = st.columns(2)
+            col1.metric("Koefisien Korelasi Spearman (ρ)", f"{correlation:.3f}")
+            col2.metric("P-value", f"{p_value:.3f}")
+
+            # Memberikan interpretasi otomatis
+            strength = ""
+            if abs(correlation) >= 0.7:
+                strength = "sangat kuat"
+            elif abs(correlation) >= 0.5:
+                strength = "kuat"
+            elif abs(correlation) >= 0.3:
+                strength = "moderat"
+            else:
+                strength = "lemah"
+
+            if p_value < 0.05:
+                st.success(f"""
+                **Kesimpulan:** Terdapat korelasi positif yang **{strength} dan signifikan secara statistik** (ρ={correlation:.3f}, p={p_value:.3f}) antara jumlah transaksi dan waktu persiapan. 
+                Ini membuktikan bahwa saat pengunjung lebih ramai, layanan dapur memang cenderung melambat.
+                """)
+            else:
+                st.warning(f"""
+                **Kesimpulan:** Meskipun terdapat korelasi positif yang terlihat **{strength}** (ρ={correlation:.3f}), hasil ini **tidak signifikan secara statistik** (p={p_value:.3f}). 
+                Kita tidak bisa menyimpulkan dengan yakin bahwa kepadatan pengunjung adalah penyebab layanan melambat berdasarkan data ini saja.
+                """)        
+#         if not agg_by_hour.empty:
+#             peak_visitor_hour = agg_by_hour.loc[agg_by_hour['TotalTransactions'].idxmax()]
+#             longest_prep_hour = agg_by_hour.loc[agg_by_hour['AvgPrepTime'].idxmax()]
+#             st.info(f"""**Insight Bisnis:**
+# - **Jam Puncak Pengunjung:** Jam **{int(peak_visitor_hour['Hour'])}:00**, dengan **{int(peak_visitor_hour['TotalTransactions'])}** transaksi.
+# - **Layanan Melambat:** Jam **{int(longest_prep_hour['Hour'])}:00**.
+# **Rekomendasi Aksi:** Jika jam layanan melambat **sama atau berdekatan** dengan jam puncak, ini adalah sinyal kuat adanya kewalahan. Pertimbangkan untuk menambah staf atau menyederhanakan menu pada jam-jam krusial tersebut jika waktu persiapan melebihi toleransi.""")
 
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
