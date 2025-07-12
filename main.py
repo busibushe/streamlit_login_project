@@ -267,7 +267,7 @@ def create_operational_efficiency_analysis(df):
                 else:
                     st.warning("Tidak cukup data per jam untuk melakukan uji korelasi statistik.")
 
-def generate_executive_summary(df_filtered, monthly_agg):
+def old_generate_executive_summary(df_filtered, monthly_agg):
     """Menciptakan ringkasan eksekutif otomatis dari semua analisis."""
     
     # --- 1. Analisis Kesehatan Makro ---
@@ -318,6 +318,102 @@ def generate_executive_summary(df_filtered, monthly_agg):
         "trend_narrative": trend_narrative, "recommendations": recommendations, "next_focus": next_focus
     }
 
+def generate_executive_summary(df_filtered, monthly_agg):
+    """
+    Menciptakan ringkasan eksekutif otomatis dari semua analisis,
+    termasuk rekomendasi dari Saluran Penjualan dan Efisiensi Operasional (jika signifikan).
+    """
+    
+    # --- 1. Analisis Kesehatan Makro ---
+    health_status, health_color = "Perlu Perhatian", "orange"
+    trend_analysis = analyze_trend_v3(monthly_agg, 'TotalMonthlySales', 'Penjualan')
+    trend_narrative = trend_analysis.get('narrative', 'Gagal menganalisis tren.')
+    yoy_change_value = None
+
+    if "meningkat** secara signifikan" in trend_narrative:
+        health_status = "Baik" if "perlambatan" in trend_narrative else "Sangat Baik"
+        health_color = "orange" if "perlambatan" in trend_narrative else "green"
+    elif "menurun** secara signifikan" in trend_narrative:
+        health_status, health_color = "Waspada", "red"
+
+    if "Dibandingkan bulan yang sama tahun lalu" in trend_narrative:
+        df = monthly_agg.dropna(subset=['TotalMonthlySales'])
+        if len(df) >= 13:
+            last_val, yoy_val = df.iloc[-1]['TotalMonthlySales'], df.iloc[-13]['TotalMonthlySales']
+            if yoy_val > 0: yoy_change_value = (last_val - yoy_val) / yoy_val
+
+    # --- 2. Rekomendasi Aksi Otomatis ---
+    recommendations = []
+    
+    # A. Rekomendasi dari Analisis Menu (Existing Logic)
+    try:
+        menu_perf = df_filtered.groupby('Menu').agg(Qty=('Qty', 'sum'), NettSales=('Nett Sales', 'sum')).reset_index()
+        if len(menu_perf) >= 4:
+            avg_qty, avg_sales = menu_perf['Qty'].mean(), menu_perf['NettSales'].mean()
+            stars = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] > avg_sales)]
+            workhorses = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] <= avg_sales)]
+            if not stars.empty:
+                top_star = stars.nlargest(1, 'NettSales')['Menu'].iloc[0]
+                recommendations.append(f"🌟 **Prioritaskan Bintang:** Fokuskan promosi pada **'{top_star}'**.")
+            if not workhorses.empty:
+                top_workhorse = workhorses.nlargest(1, 'Qty')['Menu'].iloc[0]
+                recommendations.append(f"🐴 **Optimalkan Profit:** Menu **'{top_workhorse}'** sangat laku, pertimbangkan menaikkan harga atau buat paket bundling.")
+    except Exception: pass
+
+    # B. Rekomendasi dari Analisis Saluran Penjualan (BARU)
+    try:
+        if 'Visit Purpose' in df_filtered.columns:
+            channel_sales = df_filtered.groupby('Visit Purpose')['Nett Sales'].sum()
+            agg_data = df_filtered.groupby('Visit Purpose').agg(TotalSales=('Nett Sales', 'sum'), TotalBills=('Bill Number', 'nunique'))
+            agg_data['AOV'] = agg_data['TotalSales'] / agg_data['TotalBills']
+            aov_by_channel = agg_data['AOV']
+
+            if not channel_sales.empty and not aov_by_channel.empty:
+                highest_contrib_channel = channel_sales.idxmax()
+                highest_aov_channel = aov_by_channel.idxmax()
+                
+                # Hanya tambahkan rekomendasi jika salurannya berbeda dan signifikan
+                if highest_contrib_channel == highest_aov_channel:
+                     recommendations.append(f"🏆 **Maksimalkan Saluran Utama:** Saluran **'{highest_contrib_channel}'** adalah kontributor terbesar DAN memiliki AOV tertinggi. Prioritaskan segalanya di sini!")
+                else:
+                    recommendations.append(f"💰 **Jaga Kontributor Terbesar:** Pertahankan performa saluran **'{highest_contrib_channel}'** yang menjadi penyumbang pendapatan utama Anda.")
+                    recommendations.append(f"📈 **Tingkatkan Frekuensi Saluran AOV Tinggi:** Pelanggan di **'{highest_aov_channel}'** belanja paling banyak per transaksi. Buat program loyalitas untuk mereka.")
+    except Exception: pass
+
+    # C. Rekomendasi dari Analisis Efisiensi (BARU & Berbasis Signifikansi)
+    try:
+        required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
+        if all(col in df_filtered.columns for col in required_cols):
+            df_eff = df_filtered.copy()
+            df_eff['Sales Date In'] = pd.to_datetime(df_eff['Sales Date In'], errors='coerce')
+            df_eff['Sales Date Out'] = pd.to_datetime(df_eff['Sales Date Out'], errors='coerce')
+            df_eff.dropna(subset=['Sales Date In', 'Sales Date Out'], inplace=True)
+            df_eff['Prep Time (Seconds)'] = (df_eff['Sales Date Out'] - df_eff['Sales Date In']).dt.total_seconds()
+            df_eff = df_eff[df_eff['Prep Time (Seconds)'].between(0, 3600)]
+            df_eff['Hour'] = pd.to_datetime(df_eff['Order Time'].astype(str), errors='coerce').dt.hour
+            
+            agg_by_hour = df_eff.groupby('Hour').agg(
+                AvgPrepTime=('Prep Time (Seconds)', 'mean'),
+                TotalTransactions=('Bill Number', 'nunique')
+            ).reset_index()
+
+            if len(agg_by_hour) > 2:
+                correlation, p_value = stats.spearmanr(agg_by_hour['TotalTransactions'], agg_by_hour['AvgPrepTime'])
+                # Rekomendasi hanya muncul jika korelasi POSITIF dan SIGNIFIKAN secara statistik
+                if p_value < 0.05 and correlation > 0.3:
+                    peak_hour = agg_by_hour.loc[agg_by_hour['TotalTransactions'].idxmax()]['Hour']
+                    recommendations.append(f"⏱️ **Atasi Kepadatan:** Layanan melambat saat ramai (terbukti statistik). Tambah sumber daya atau sederhanakan menu pada jam puncak sekitar pukul **{int(peak_hour)}:00**.")
+    except Exception: pass
+
+
+    # --- 3. Fokus Bulan Berikutnya ---
+    next_focus = "Pantau dampak eksekusi rekomendasi pada **AOV** dan **kecepatan layanan**."
+
+    return {
+        "health_status": health_status, "health_color": health_color, "yoy_change": yoy_change_value,
+        "trend_narrative": trend_narrative, "recommendations": recommendations, "next_focus": next_focus
+    }
+    
 def display_executive_summary(summary):
     """Menampilkan ringkasan eksekutif dengan layout UI/UX yang compact."""
     
