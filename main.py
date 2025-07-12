@@ -236,10 +236,10 @@ elif auth_status:
     if os.path.exists("logo.png"): st.sidebar.image("logo.png", width=150)
     authenticator.logout("Logout", "sidebar")
     st.sidebar.success(f"Login sebagai: **{name}**")
-    st.sidebar.title("📤 Unggah & Konfigurasi")
+    st.sidebar.title("📤 Unggah & Mapping Kolom")
 
     uploaded_sales_file = st.sidebar.file_uploader(
-        "1. Unggah File Penjualan Detail", type=["xlsx", "xls", "csv"],
+        "1. Unggah Sales Recapitulation Detail Report", type=["xlsx", "xls", "csv"],
         key="sales_uploader", on_change=reset_processing_state
     )
     
@@ -248,8 +248,8 @@ elif auth_status:
 
     df_raw = load_raw_data(uploaded_sales_file)
     
-    st.sidebar.subheader("🔗 Pemetaan Kolom")
-    REQUIRED_COLS_MAP = {'Sales Date': 'Tgl. Transaksi', 'Branch': 'Nama Cabang', 'Bill Number': 'No. Struk/Bill', 'Nett Sales': 'Penjualan Bersih', 'Menu': 'Nama Item/Menu', 'Qty': 'Kuantitas'}
+    st.sidebar.subheader("🔗 Mapping Kolom")
+    REQUIRED_COLS_MAP = {'Sales Date': 'Tgl. Transaksi', 'Branch': 'Nama Cabang', 'Bill Number': 'No. Struk/Bill', 'Total After Bill Discount': 'Penjualan Bersih', 'Menu': 'Nama Item/Menu', 'Qty': 'Qty'}
     OPTIONAL_COLS_MAP = {'Visit Purpose': 'Saluran Penjualan', 'Payment Method': 'Metode Pembayaran', 'Sales Date In': 'Waktu Pesanan Masuk', 'Sales Date Out': 'Waktu Pesanan Selesai', 'Order Time': 'Jam Pesanan'}
     user_mapping = {}
     
@@ -327,7 +327,7 @@ elif auth_status:
         if df_filtered.empty:
             st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih."); st.stop()
             
-        st.title(f"Dashboard Holistik: {selected_branch}")
+        st.title(f"Sales Analysis Dashboard: {selected_branch}")
         st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
 
         trend_tab, ops_tab = st.tabs(["📈 **Dashboard Tren Performa**", "🚀 **Dashboard Analisis Operasional**"])
