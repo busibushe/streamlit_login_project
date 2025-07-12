@@ -122,7 +122,7 @@ def create_channel_analysis(df):
         - **Nilai Pesanan Tertinggi:** Pelanggan dari saluran **{highest_aov_channel}** cenderung menghabiskan lebih banyak per transaksi. Pertimbangkan untuk memberikan penawaran eksklusif atau program loyalitas untuk segmen ini guna meningkatkan frekuensi kunjungan mereka.
         """)
 
-def create_menu_engineering_chart(df):
+def old_create_menu_engineering_chart(df):
     """Membuat visualisasi kuadran untuk menu engineering dengan insight bisnis."""
     st.subheader("🔬 Analisis Performa Menu")
     menu_perf = df.groupby('Menu').agg(Qty=('Qty', 'sum'), NettSales=('Nett Sales', 'sum')).reset_index()
@@ -174,7 +174,60 @@ def create_menu_engineering_chart(df):
     - **Merah | DOGS 🐶:** Kurang populer & profit. **Pertimbangkan untuk menghapus dari menu.**
     """)
 
-# GANTI fungsi create_operational_efficiency_analysis yang lama dengan versi baru ini
+# GANTI fungsi create_menu_engineering_chart yang lama dengan versi baru ini
+def create_menu_engineering_chart(df):
+    """Membuat visualisasi kuadran untuk menu engineering dengan expander untuk penjelasan."""
+    st.subheader("🔬 Analisis Performa Menu")
+    menu_perf = df.groupby('Menu').agg(Qty=('Qty', 'sum'), NettSales=('Nett Sales', 'sum')).reset_index()
+    if len(menu_perf) < 4:
+        st.warning("Data menu tidak cukup untuk analisis kuadran yang berarti."); return
+
+    avg_qty, avg_sales = menu_perf['Qty'].mean(), menu_perf['NettSales'].mean()
+    show_text = len(menu_perf) < 75 
+    text_arg = menu_perf['Menu'] if show_text else None
+
+    fig = px.scatter(menu_perf, x='Qty', y='NettSales', text=text_arg, title="Kuadran Performa Menu",
+                     labels={'Qty': 'Total Kuantitas Terjual', 'NettSales': 'Total Penjualan Bersih (Rp)'},
+                     size='NettSales', color='NettSales', hover_name='Menu')
+    
+    fig.add_shape(type="rect", x0=avg_qty, y0=avg_sales, x1=menu_perf['Qty'].max(), y1=menu_perf['NettSales'].max(), fillcolor="lightgreen", opacity=0.2, layer="below", line_width=0)
+    fig.add_shape(type="rect", x0=menu_perf['Qty'].min(), y0=avg_sales, x1=avg_qty, y1=menu_perf['NettSales'].max(), fillcolor="lightblue", opacity=0.2, layer="below", line_width=0)
+    fig.add_shape(type="rect", x0=avg_qty, y0=menu_perf['NettSales'].min(), x1=menu_perf['Qty'].max(), y1=avg_sales, fillcolor="lightyellow", opacity=0.2, layer="below", line_width=0)
+    fig.add_shape(type="rect", x0=menu_perf['Qty'].min(), y0=menu_perf['NettSales'].min(), x1=avg_qty, y1=avg_sales, fillcolor="lightcoral", opacity=0.2, layer="below", line_width=0)
+    
+    fig.add_vline(x=avg_qty, line_dash="dash", line_color="gray")
+    fig.add_hline(y=avg_sales, line_dash="dash", line_color="gray")
+    
+    if show_text:
+        fig.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
+        fig.update_traces(textposition='top center')
+    else:
+        st.warning("⚠️ Label nama menu disembunyikan karena jumlahnya terlalu banyak. Arahkan mouse ke titik untuk melihat detail.")
+        
+    st.plotly_chart(fig, use_container_width=True)
+
+    stars = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] > avg_sales)]
+    workhorses = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] <= avg_sales)]
+    
+    insight_text = "**Rekomendasi Aksi:**\n"
+    if not stars.empty:
+        top_star = stars.nlargest(1, 'NettSales')['Menu'].iloc[0]
+        insight_text += f"- **Fokuskan Promosi:** Menu **'{top_star}'** adalah Bintang (Star) utama Anda. Jadikan pusat promosi.\n"
+    if not workhorses.empty:
+        top_workhorse = workhorses.nlargest(1, 'Qty')['Menu'].iloc[0]
+        insight_text += f"- **Peluang Profit:** Menu **'{top_workhorse}'** sangat populer (Workhorse). Coba naikkan harga atau buat paket bundling."
+    
+    if len(insight_text) > 20: st.info(insight_text)
+    
+    # --- PERBAIKAN: Mengubah st.info menjadi st.expander ---
+    with st.expander("💡 Cara Membaca Kuadran Performa Menu"):
+        st.markdown("""
+        Grafik ini membantu Anda mengkategorikan item menu berdasarkan popularitas (sumbu X) dan profitabilitas (sumbu Y) untuk membuat keputusan strategis.
+        - **<span style='color:green; font-weight:bold;'>STARS 🌟 (Kanan Atas):</span>** Juara Anda! Populer dan menguntungkan. **Aksi: Pertahankan dan promosikan!**
+        - **<span style='color:darkgoldenrod; font-weight:bold;'>WORKHORSES 🐴 (Kanan Bawah):</span>** Populer tapi kurang profit. **Aksi: Coba naikkan harga sedikit atau tawarkan paket bundling.**
+        - **<span style='color:blue; font-weight:bold;'>PUZZLES 🤔 (Kiri Atas):</span>** Sangat profit tapi jarang dipesan. **Aksi: Cari tahu mengapa kurang laku, latih staf untuk merekomendasikan.**
+        - **<span style='color:red; font-weight:bold;'>DOGS 🐶 (Kiri Bawah):</span>** Kurang populer & profit. **Aksi: Pertimbangkan untuk menghapusnya dari menu untuk efisiensi.**
+        """, unsafe_allow_html=True)
 
 def create_operational_efficiency_analysis(df):
     """
@@ -266,85 +319,6 @@ def create_operational_efficiency_analysis(df):
                         """)
                 else:
                     st.warning("Tidak cukup data per jam untuk melakukan uji korelasi statistik.")
-                        
-def old_create_operational_efficiency_analysis(df):
-    """Membuat visualisasi efisiensi dengan korelasi jumlah transaksi dan insight."""
-    st.subheader("⏱️ Analisis Efisiensi Operasional")
-    required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
-    if not all(col in df.columns for col in required_cols):
-        st.warning("Kolom waktu (In, Out, Order Time) atau Bill Number tidak dipetakan."); return
-
-    df_eff = df.copy()
-    df_eff['Sales Date In'], df_eff['Sales Date Out'] = pd.to_datetime(df_eff['Sales Date In'], errors='coerce'), pd.to_datetime(df_eff['Sales Date Out'], errors='coerce')
-    df_eff.dropna(subset=['Sales Date In', 'Sales Date Out'], inplace=True)
-    
-    if df_eff.empty: return st.warning("Data waktu masuk/keluar tidak valid atau kosong.")
-    
-    df_eff['Prep Time (Seconds)'] = (df_eff['Sales Date Out'] - df_eff['Sales Date In']).dt.total_seconds()
-    df_eff = df_eff[df_eff['Prep Time (Seconds)'].between(0, 3600)]
-
-    if df_eff.empty:
-        st.warning("Tidak ada data waktu persiapan yang valid (0-60 menit) untuk dianalisis."); return
-
-    kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
-    kpi_col1.metric("Waktu Persiapan Rata-rata", f"{df_eff['Prep Time (Seconds)'].mean():.1f} dtk")
-    kpi_col2.metric("Waktu Persiapan Tercepat", f"{df_eff['Prep Time (Seconds)'].min():.1f} dtk")
-    kpi_col3.metric("Waktu Persiapan Terlama", f"{df_eff['Prep Time (Seconds)'].max():.1f} dtk")
-
-    if 'Order Time' in df_eff.columns and not df_eff['Order Time'].isnull().all():
-        df_eff['Hour'] = pd.to_datetime(df_eff['Order Time'].astype(str), errors='coerce').dt.hour
-        agg_by_hour = df_eff.groupby('Hour').agg(AvgPrepTime=('Prep Time (Seconds)', 'mean'), TotalTransactions=('Bill Number', 'nunique')).reset_index()
-        
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-        fig.add_trace(go.Bar(x=agg_by_hour['Hour'], y=agg_by_hour['TotalTransactions'], name="Jumlah Transaksi"), secondary_y=False)
-        fig.add_trace(go.Scatter(x=agg_by_hour['Hour'], y=agg_by_hour['AvgPrepTime'], name="Rata-rata Waktu Persiapan", mode='lines+markers'), secondary_y=True)
-        
-        fig.update_layout(title_text="Korelasi Waktu Persiapan & Jumlah Pengunjung per Jam")
-        fig.update_xaxes(title_text="Jam dalam Sehari")
-        fig.update_yaxes(title_text="<b>Jumlah Transaksi</b> (Batang)", secondary_y=False)
-        fig.update_yaxes(title_text="<b>Rata-rata Waktu Persiapan (Detik)</b> (Garis)", secondary_y=True)
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Tambahkan ini di akhir fungsi create_operational_efficiency_analysis
-        if not agg_by_hour.empty and len(agg_by_hour) > 2:
-            # --- PERBAIKAN: Menambahkan analisis korelasi statistik ---
-            st.subheader("🔬 Uji Statistik Korelasi")
-            
-            # Pilih Korelasi Spearman karena lebih robust
-            correlation, p_value = stats.spearmanr(agg_by_hour['TotalTransactions'], agg_by_hour['AvgPrepTime'])
-            
-            col1, col2 = st.columns(2)
-            col1.metric("Koefisien Korelasi Spearman (ρ)", f"{correlation:.3f}")
-            col2.metric("P-value", f"{p_value:.3f}")
-
-            # Memberikan interpretasi otomatis
-            strength = ""
-            if abs(correlation) >= 0.7:
-                strength = "sangat kuat"
-            elif abs(correlation) >= 0.5:
-                strength = "kuat"
-            elif abs(correlation) >= 0.3:
-                strength = "moderat"
-            else:
-                strength = "lemah"
-
-            if p_value < 0.05:
-                st.success(f"""
-                **Kesimpulan:** Terdapat korelasi positif yang **{strength} dan signifikan secara statistik** (ρ={correlation:.3f}, p={p_value:.3f}) antara jumlah transaksi dan waktu persiapan. 
-                Ini membuktikan bahwa saat pengunjung lebih ramai, layanan dapur memang cenderung melambat.
-                """)
-            else:
-                st.warning(f"""
-                **Kesimpulan:** Meskipun terdapat korelasi positif yang terlihat **{strength}** (ρ={correlation:.3f}), hasil ini **tidak signifikan secara statistik** (p={p_value:.3f}). 
-                Kita tidak bisa menyimpulkan dengan yakin bahwa kepadatan pengunjung adalah penyebab layanan melambat berdasarkan data ini saja.
-                """)        
-#         if not agg_by_hour.empty:
-#             peak_visitor_hour = agg_by_hour.loc[agg_by_hour['TotalTransactions'].idxmax()]
-#             longest_prep_hour = agg_by_hour.loc[agg_by_hour['AvgPrepTime'].idxmax()]
-#             st.info(f"""**Insight Bisnis:**
-# - **Jam Puncak Pengunjung:** Jam **{int(peak_visitor_hour['Hour'])}:00**, dengan **{int(peak_visitor_hour['TotalTransactions'])}** transaksi.
-# - **Layanan Melambat:** Jam **{int(longest_prep_hour['Hour'])}:00**.
-# **Rekomendasi Aksi:** Jika jam layanan melambat **sama atau berdekatan** dengan jam puncak, ini adalah sinyal kuat adanya kewalahan. Pertimbangkan untuk menambah staf atau menyederhanakan menu pada jam-jam krusial tersebut jika waktu persiapan melebihi toleransi.""")
 
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
