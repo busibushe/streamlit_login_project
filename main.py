@@ -1221,7 +1221,7 @@ def sc5_display_executive_summary(summary):
             st.markdown("---")
             st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
 
-def sc6_display_executive_summary(summary):
+def display_executive_summary(summary):
     """
     Menampilkan ringkasan eksekutif dengan layout horizontal yang compact,
     visualisasi YoY yang disempurnakan, dan analisis skor multi-baris.
@@ -1311,7 +1311,7 @@ def sc6_display_executive_summary(summary):
             st.markdown("---")
             st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
 
-def display_executive_summary(summary):
+def old_display_executive_summary(summary):
     """
     Menampilkan ringkasan eksekutif dengan layout 2 kolom:
     Kolom 1 berisi status kesehatan dan performa YoY.
@@ -1401,7 +1401,7 @@ def display_executive_summary(summary):
 
             st.markdown("---")
             st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
-            
+
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
 # ==============================================================================
