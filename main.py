@@ -1470,11 +1470,11 @@ def display_executive_summary(summary):
                         momentum_arrow = format_score_with_arrows(details['momentum_jangka_pendek'])
                         
                         st.markdown(f"**{metric_name}**")
-                        st.markdown(f"<h2>{total_arrow}</h2>", unsafe_allow_html=True)
+                        st.markdown(f"<h3>{total_arrow}</h3>", unsafe_allow_html=True)
                         
                         # --- INI BARIS YANG DIPERBAIKI ---
                         # Mengganti st.caption dengan st.markdown dan tag <small>
-                        caption_text = f"<small>T: {trend_arrow}, M: {momentum_arrow}</small>"
+                        caption_text = f"<small>Tren: {trend_arrow}, Momentum: {momentum_arrow}</small>"
                         st.markdown(caption_text, unsafe_allow_html=True)
 
         # --- Detail lainnya tetap di dalam expander ---
