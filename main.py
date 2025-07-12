@@ -535,8 +535,8 @@ def display_executive_summary(summary):
                     st.markdown(f"- {rec}")
             else:
                 st.markdown("**Rekomendasi Aksi Teratas:**")
-                st.write("Tidak ada rekomendasi aksi prioritas yang dihasilkan secara otomatis untuk periode ini.")
-                
+                st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
+
 # ==============================================================================
 # LOGIKA AUTENTIKASI DAN APLIKASI UTAMA
 # ==============================================================================
@@ -665,24 +665,24 @@ elif auth_status:
             # Panggil fungsi display yang baru
             display_executive_summary(summary)
 
-            st.markdown("---")
-            with st.container(border=True):
-                st.subheader("Ringkasan Eksekutif & Rekomendasi Aksi")
-                col1, col2 = st.columns([1, 2])
-                with col1:
-                    st.metric("Status Kesehatan Bisnis", summary['health_status'])
-                    st.markdown(f"<p style='background-color:{summary['health_color']}; color:white; padding:10px; border-radius:5px;'>{summary['health_status']}</p>", unsafe_allow_html=True)
+            # st.markdown("---")
+            # with st.container(border=True):
+            #     st.subheader("Ringkasan Eksekutif & Rekomendasi Aksi")
+            #     col1, col2 = st.columns([1, 2])
+            #     with col1:
+            #         st.metric("Status Kesehatan Bisnis", summary['health_status'])
+            #         st.markdown(f"<p style='background-color:{summary['health_color']}; color:white; padding:10px; border-radius:5px;'>{summary['health_status']}</p>", unsafe_allow_html=True)
 
-                with col2:
-                    st.markdown("**Narasi Tren Utama:**")
-                    st.write(summary['trend_narrative'])
+            #     with col2:
+            #         st.markdown("**Narasi Tren Utama:**")
+            #         st.write(summary['trend_narrative'])
 
-                st.markdown("**Rekomendasi Aksi Teratas:**")
-                for rec in summary['recommendations']:
-                    st.write(rec)
+            #     st.markdown("**Rekomendasi Aksi Teratas:**")
+            #     for rec in summary['recommendations']:
+            #         st.write(rec)
                 
-                st.markdown("**Fokus Bulan Berikutnya:**")
-                st.success(summary['next_focus'])
+            #     st.markdown("**Fokus Bulan Berikutnya:**")
+            #     st.success(summary['next_focus'])
         st.markdown("---")
 
 
