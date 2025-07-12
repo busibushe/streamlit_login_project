@@ -984,7 +984,7 @@ def display_executive_summary(summary):
                     st.markdown(tren_text)
                     st.markdown(momentum_text)
             
-            st.markdown("---")
+            # st.markdown("---")
             
             # Menampilkan rekomendasi aksi
             if summary['recommendations']:
