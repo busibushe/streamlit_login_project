@@ -993,7 +993,7 @@ def sc2_display_executive_summary(summary):
                 st.markdown("**Rekomendasi Aksi Teratas:**")
                 st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
 
-def display_executive_summary(summary):
+def sc3_display_executive_summary(summary):
     """
     Menampilkan ringkasan eksekutif dengan layout baru yang lebih intuitif,
     menempatkan rincian skor di sebelah status dan menambahkan legenda.
@@ -1055,6 +1055,73 @@ def display_executive_summary(summary):
 
         # Detail lainnya tetap berada di dalam expander
         with st.expander("🔍 Lihat Narasi Lengkap & Rekomendasi Aksi"):
+            st.markdown("**Narasi Tren Utama (Penjualan):**")
+            st.write(summary['trend_narrative'])
+            
+            if summary.get('health_context_narrative'):
+                st.markdown(summary['health_context_narrative'])
+
+            st.markdown("---")
+            
+            if summary['recommendations']:
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                for rec in summary['recommendations']:
+                    st.markdown(f"- {rec}")
+            else:
+                st.markdown("**Rekomendasi Aksi Teratas:**")
+                st.write("Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
+
+            st.markdown("---")
+            st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
+
+def display_executive_summary(summary):
+    """
+    Menampilkan ringkasan eksekutif dengan layout horizontal yang sangat compact,
+    memprioritaskan kepadatan informasi dalam ruang minimal.
+    """
+    
+    st.subheader("Ringkasan Eksekutif")
+    
+    with st.container(border=True):
+        # Gunakan 3 kolom untuk layout horizontal yang padat
+        col1, col2, col3 = st.columns([1.5, 1, 2.5])
+
+        # KOLOM 1: Status Kesehatan sebagai "Badge" Visual
+        with col1:
+            st.markdown("Status Kesehatan Bisnis")
+            status = summary['health_status']
+            color = summary['health_color']
+            st.markdown(
+                f"""
+                <div style="background-color:{color}; color:white; font-weight:bold; padding: 10px; border-radius: 7px; text-align:center;">
+                    {status.upper()}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # KOLOM 2: KPI Kinerja Utama (YoY)
+        with col2:
+            st.markdown("Performa YoY")
+            delta_text = f"{summary['yoy_change']:.1%}" if summary['yoy_change'] is not None else "N/A"
+            st.metric(label="vs. Tahun Lalu", value=delta_text)
+
+        # KOLOM 3: Rincian Skor yang Diringkas
+        with col3:
+            st.markdown("Analisis Skor")
+            score_texts = []
+            for metric, details in summary['score_details'].items():
+                # Format ringkas: "Metric: Total (T:X, M:Y)"
+                score_texts.append(
+                    f"**{metric}: {details['total']}**&nbsp;(T: {details['tren_jangka_panjang']}, M: {details['momentum_jangka_pendek']})"
+                )
+            # Gabungkan dengan pemisah "•" untuk kepadatan
+            st.markdown(" &bull; ".join(score_texts))
+            st.caption("T: Tren Jk. Panjang, M: Momentum Jk. Pendek")
+
+        # --- Detail lainnya tetap di dalam expander ---
+        with st.expander("🔍 Lihat Narasi Lengkap & Rekomendasi Aksi"):
+            # (Tidak ada perubahan pada bagian ini)
             st.markdown("**Narasi Tren Utama (Penjualan):**")
             st.write(summary['trend_narrative'])
             
