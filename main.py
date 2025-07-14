@@ -598,7 +598,7 @@ def create_waiter_performance_analysis(df):
     with st.expander("Lihat Data Kinerja Pramusaji Lengkap"):
         st.dataframe(waiter_perf.sort_values('TotalSales', ascending=False), use_container_width=True)
 
-def create_discount_effectiveness_analysis(df):
+def old_create_discount_effectiveness_analysis(df):
     """Menganalisis apakah diskon efektif meningkatkan belanja pelanggan."""
     st.subheader("📉 Analisis Efektivitas Diskon")
     if 'Discount' not in df.columns or 'Bill Discount' not in df.columns:
@@ -639,7 +639,65 @@ def create_discount_effectiveness_analysis(df):
             st.warning(f"⚠️ **Potensi Kanibalisasi**: Diskon tidak meningkatkan AOV secara signifikan (perubahan {diff:.1%}). Ada risiko diskon hanya mengurangi profit tanpa mendorong pelanggan untuk belanja lebih banyak.")
     else:
         st.info("Tidak ada cukup data untuk membandingkan AOV dengan dan tanpa diskon.")
+
+import streamlit as st
+import pandas as pd
+
+def create_discount_effectiveness_analysis(df):
+    """
+    Menganalisis apakah diskon efektif meningkatkan belanja pelanggan.
+    Fungsi ini membandingkan Average Order Value (AOV) antara transaksi
+    yang menggunakan diskon dengan yang tidak.
+    """
+    st.subheader("📉 Analisis Efektivitas Diskon")
+
+    # Memastikan kolom yang dibutuhkan tersedia di data
+    if 'Discount' not in df.columns or 'Bill Discount' not in df.columns:
+        st.warning("Kolom 'Discount' dan/atau 'Bill Discount' tidak dipetakan. Analisis ini tidak tersedia.")
+        return
         
+    df_analysis = df.copy()
+    
+    # Menghitung total diskon per baris dan menandai transaksi mana yang punya diskon
+    df_analysis['TotalDiscount'] = df_analysis['Discount'] + df_analysis['Bill Discount']
+    df_analysis['HasDiscount'] = df_analysis['TotalDiscount'] > 0
+    
+    # Jika tidak ada variasi (semua transaksi punya diskon atau semua tidak punya), analisis tidak bisa dilanjutkan
+    if df_analysis['HasDiscount'].nunique() < 2:
+        st.info("Tidak ada cukup data untuk membandingkan transaksi dengan dan tanpa diskon.")
+        return
+
+    # Agregasi per nomor struk/bill untuk menghitung AOV dengan benar
+    bill_agg = df_analysis.groupby('Bill Number').agg(
+        NettSales=('Nett Sales', 'sum'),
+        HasDiscount=('HasDiscount', 'max') # Jika satu item saja ada diskon, maka seluruh struk dianggap punya diskon
+    )
+    
+    # Menghitung AOV rata-rata untuk grup 'dengan diskon' dan 'tanpa diskon'
+    aov_comparison = bill_agg.groupby('HasDiscount')['NettSales'].mean()
+    
+    # Memeriksa apakah kedua grup ada untuk dibandingkan
+    if True in aov_comparison.index and False in aov_comparison.index:
+        
+        # --- PERBAIKAN UTAMA ---
+        # Mengubah tipe data dari numpy.float64 ke float standar Python untuk menghindari error format
+        aov_with_discount = float(aov_comparison.loc[True])
+        aov_without_discount = float(aov_comparison.loc[False])
+        
+        # Menampilkan perbandingan menggunakan st.metric
+        col1, col2 = st.columns(2)
+        col1.metric("AOV dengan Diskon", f"Rp {aov_with_discount:,.0f}")
+        col2.metric("AOV tanpa Diskon", f"Rp {aov_without_discount:,.0f}")
+        
+        # Memberikan insight otomatis berdasarkan hasil perbandingan
+        diff = (aov_with_discount - aov_without_discount) / aov_without_discount
+        if diff > 0.05: # Jika AOV naik lebih dari 5%, dianggap efektif
+            st.success(f"✅ **Efektif**: Pemberian diskon secara umum berhasil meningkatkan nilai belanja rata-rata sebesar **{diff:.1%}**.")
+        else:
+            st.warning(f"⚠️ **Potensi Kanibalisasi**: Diskon tidak meningkatkan AOV secara signifikan (perubahan {diff:.1%}). Ada risiko diskon hanya mengurangi profit tanpa mendorong pelanggan untuk belanja lebih banyak.")
+    else:
+        st.info("Tidak ada cukup data untuk membandingkan AOV dengan dan tanpa diskon.")
+                
 def create_regional_analysis(df):
     """Menganalisis perbedaan performa dan preferensi antar kota."""
     st.subheader("🏙️ Analisis Kinerja Regional")
