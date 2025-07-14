@@ -552,7 +552,8 @@ def display_operational_efficiency(ops_results):
 # APLIKASI UTAMA STREAMLIT
 # ==============================================================================
 
-def main_app():
+# GANTI FUNGSI LAMA DENGAN INI
+def main_app(user_name):
     """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
     if 'data_processed' not in st.session_state:
         st.session_state.data_processed = False
@@ -560,7 +561,8 @@ def main_app():
     # --- SIDEBAR: Autentikasi, Logout, dan Unggah File ---
     if os.path.exists("logo.png"): st.sidebar.image("logo.png", width=150)
     authenticator.logout("Logout", "sidebar")
-    st.sidebar.success(f"Login sebagai: **{name}**")
+    # --- PERUBAHAN UTAMA: Gunakan argumen fungsi 'user_name' ---
+    st.sidebar.success(f"Login sebagai: **{user_name}**")
     st.sidebar.title("📤 Unggah & Mapping Kolom")
 
     uploaded_file = st.sidebar.file_uploader(
@@ -672,18 +674,30 @@ def main_app():
             st.markdown("---")
             display_operational_efficiency(ops_results)
 
-
 # ==============================================================================
 # LOGIKA AUTENTIKASI
 # ==============================================================================
 try:
     config = {'credentials': st.secrets['credentials'].to_dict(), 'cookie': st.secrets['cookie'].to_dict()}
-    authenticator = stauth.Authenticate(config['credentials'], config['cookie']['name'], config['cookie']['key'], config['cookie']['expiry_days'])
+    authenticator = stauth.Authenticate(
+        config['credentials'],
+        config['cookie']['name'],
+        config['cookie']['key'],
+        config['cookie']['expiry_days']
+    )
+
     name, auth_status, username = authenticator.login("Login", "main")
 
-    if auth_status is False: st.error("Username atau password salah.")
-    elif auth_status is None: st.warning("Silakan masukkan username dan password.")
+    if auth_status is False:
+        st.error("Username atau password salah.")
+    elif auth_status is None:
+        st.warning("Silakan masukkan username dan password.")
     elif auth_status:
-        main_app() # Jalankan aplikasi utama setelah login berhasil
+        # --- PERUBAHAN UTAMA: Panggil fungsi dengan menyertakan 'name' ---
+        main_app(name)
+
+except KeyError as e:
+    st.error(f"❌ Kesalahan Konfigurasi 'secrets.toml': Key {e} tidak ditemukan.")
+    st.info("Pastikan file secrets Anda memiliki struktur [credentials] dan [cookie] yang benar sesuai dokumentasi streamlit-authenticator.")
 except Exception as e:
-    st.error(f"Terjadi kesalahan pada konfigurasi autentikasi. Pastikan st.secrets sudah diatur dengan benar. Detail: {e}")
+    st.error(f"Terjadi kesalahan tak terduga saat inisialisasi: {e}")
