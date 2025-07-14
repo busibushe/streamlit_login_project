@@ -51,6 +51,33 @@ def load_raw_data(file):
         st.error(f"Gagal memuat file: {e}")
         return None
 
+def find_best_column_match(all_columns, internal_name, description):
+    """
+    Mencari nama kolom yang paling cocok dari daftar berdasarkan nama internal dan deskripsi.
+    Fungsi ini membersihkan nama kolom dan kata kunci untuk pencocokan yang lebih andal.
+    """
+    # Membuat kata kunci pencarian yang sudah dibersihkan (tanpa spasi, underscore, huruf besar)
+    keywords = [
+        internal_name.lower().replace("_", "").replace(" ", ""),
+        description.lower().replace("_", "").replace(" ", "")
+    ]
+    keywords = list(set(keywords)) # Hapus duplikat
+
+    # Iterasi melalui setiap kolom di file yang diunggah
+    for col in all_columns:
+        if not col or not isinstance(col, str):
+            continue # Lewati jika nama kolom kosong
+
+        # Bersihkan nama kolom dari file dengan cara yang sama seperti kata kunci
+        cleaned_col = col.lower().replace("_", "").replace(" ", "")
+
+        # Cek apakah salah satu kata kunci ada di dalam nama kolom yang sudah dibersihkan
+        for keyword in keywords:
+            if keyword in cleaned_col:
+                return col # Jika cocok, kembalikan nama kolom asli
+
+    return None # Jika tidak ada yang cocok sama sekali
+
 def process_mapped_data(df_raw, user_mapping):
     """
     Memproses DataFrame mentah setelah pemetaan kolom:
@@ -547,13 +574,12 @@ def display_operational_efficiency(ops_results):
         else:
             st.warning("Tidak cukup data per jam untuk melakukan uji korelasi statistik.")
 
-
 # ==============================================================================
 # APLIKASI UTAMA STREAMLIT
 # ==============================================================================
 
 # GANTI FUNGSI LAMA DENGAN INI
-def main_app(user_name):
+def old_main_app(user_name):
     """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
     if 'data_processed' not in st.session_state:
         st.session_state.data_processed = False
@@ -674,6 +700,127 @@ def main_app(user_name):
             st.markdown("---")
             display_operational_efficiency(ops_results)
 
+def main_app(user_name):
+    """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
+    if 'data_processed' not in st.session_state:
+        st.session_state.data_processed = False
+
+    # --- SIDEBAR: Autentikasi, Logout, dan Unggah File ---
+    if os.path.exists("logo.png"): st.sidebar.image("logo.png", width=150)
+    authenticator.logout("Logout", "sidebar")
+    st.sidebar.success(f"Login sebagai: **{user_name}**")
+    st.sidebar.title("📤 Unggah & Mapping Kolom")
+
+    uploaded_file = st.sidebar.file_uploader(
+        "1. Unggah Sales Report", type=["xlsx", "xls", "csv"],
+        on_change=reset_processing_state
+    )
+    
+    if uploaded_file is None:
+        st.info("👋 Selamat datang! Silakan unggah file data penjualan Anda untuk memulai analisis.")
+        st.stop()
+
+    df_raw = load_raw_data(uploaded_file)
+    if df_raw is None: st.stop()
+
+    # --- SIDEBAR: Mapping Kolom (LOGIKA YANG DIPERBAIKI) ---
+    user_mapping = {}
+    all_cols = [""] + df_raw.columns.tolist()
+
+    with st.sidebar.expander("Atur Kolom Wajib", expanded=not st.session_state.data_processed):
+        for internal_name, desc in REQUIRED_COLS_MAP.items():
+            # Menggunakan fungsi pencocokan yang sudah disempurnakan
+            best_guess = find_best_column_match(all_cols, internal_name, desc)
+            index = all_cols.index(best_guess) if best_guess else 0
+            key = f"map_req_{internal_name}"
+            user_mapping[internal_name] = st.selectbox(f"**{desc}**:", options=all_cols, index=index, key=key)
+    
+    with st.sidebar.expander("Atur Kolom Opsional"):
+        for internal_name, desc in OPTIONAL_COLS_MAP.items():
+            # Menggunakan fungsi pencocokan yang sudah disempurnakan
+            best_guess = find_best_column_match(all_cols, internal_name, desc)
+            index = all_cols.index(best_guess) if best_guess else 0
+            key = f"map_opt_{internal_name}"
+            user_mapping[internal_name] = st.selectbox(f"**{desc}**:", options=all_cols, index=index, key=key)
+
+
+    # --- SIDEBAR: Tombol Proses Data ---
+    if st.sidebar.button("✅ Terapkan dan Proses Data", type="primary"):
+        # Validasi mapping
+        mapped_req_cols = [user_mapping.get(k) for k in REQUIRED_COLS_MAP.keys()]
+        if not all(mapped_req_cols):
+            st.error("❌ Harap petakan semua kolom WAJIB diisi."); st.stop()
+        chosen_cols = [c for c in user_mapping.values() if c]
+        if len(chosen_cols) != len(set(chosen_cols)):
+            st.error("❌ Terdeteksi satu kolom dipilih untuk beberapa peran berbeda."); st.stop()
+        
+        # Proses data dan simpan ke session state
+        df_processed = process_mapped_data(df_raw, user_mapping)
+        if df_processed is not None:
+            st.session_state.df_processed = df_processed
+            st.session_state.data_processed = True
+            st.rerun()
+
+    # --- KONTEN UTAMA: Tampilkan Dashboard Jika Data Sudah Diproses ---
+    if st.session_state.data_processed:
+        df_processed = st.session_state.df_processed
+        
+        # --- SIDEBAR: Filter Global ---
+        st.sidebar.title("⚙️ Filter Global")
+        unique_branches = sorted(df_processed['Branch'].unique())
+        selected_branch = st.sidebar.selectbox("Pilih Cabang", unique_branches)
+        min_date, max_date = df_processed['Sales Date'].min().date(), df_processed['Sales Date'].max().date()
+        date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+
+        if len(date_range) != 2: st.stop()
+        
+        # Terapkan filter
+        start_date, end_date = date_range
+        df_filtered = df_processed[
+            (df_processed['Branch'] == selected_branch) &
+            (df_processed['Sales Date'].dt.date >= start_date) &
+            (df_processed['Sales Date'].dt.date <= end_date)
+        ]
+
+        if df_filtered.empty:
+            st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih."); st.stop()
+        
+        # --- HEADER UTAMA ---
+        st.title(f"Dashboard Analisis Penjualan: {selected_branch}")
+        st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
+
+        # --- LAKUKAN SEMUA ANALISIS SEKALI SAJA ---
+        monthly_agg = analyze_monthly_trends(df_filtered)
+        channel_results = calculate_channel_analysis(df_filtered)
+        menu_results = calculate_menu_engineering(df_filtered)
+        ops_results = calculate_operational_efficiency(df_filtered)
+        
+        # --- TAMPILKAN RINGKASAN EKSEKUTIF ---
+        if monthly_agg is not None and len(monthly_agg) >= 3:
+            summary = generate_executive_summary(monthly_agg, channel_results, menu_results, ops_results)
+            display_executive_summary(summary)
+
+        # --- TAMPILKAN TAB DASHBOARD ---
+        trend_tab, ops_tab = st.tabs(["📈 **Dashboard Tren Performa**", "🚀 **Dashboard Analisis Operasional**"])
+
+        with trend_tab:
+            st.header("Analisis Tren Performa Jangka Panjang")
+            if monthly_agg is not None and not monthly_agg.empty:
+                display_monthly_kpis(monthly_agg)
+                display_trend_chart_and_analysis(monthly_agg, 'TotalMonthlySales', 'Penjualan', 'royalblue')
+                display_trend_chart_and_analysis(monthly_agg, 'TotalTransactions', 'Transaksi', 'orange')
+                display_trend_chart_and_analysis(monthly_agg, 'AOV', 'AOV', 'green')
+            else:
+                st.warning("Tidak ada data bulanan yang cukup untuk analisis tren pada periode ini.")
+
+        with ops_tab:
+            st.header("Wawasan Operasional dan Taktis")
+            display_channel_analysis(channel_results)
+            st.markdown("---")
+            display_menu_engineering(menu_results)
+            st.markdown("---")
+            display_operational_efficiency(ops_results)
+
 # ==============================================================================
 # LOGIKA AUTENTIKASI
 # ==============================================================================
@@ -693,7 +840,6 @@ try:
     elif auth_status is None:
         st.warning("Silakan masukkan username dan password.")
     elif auth_status:
-        # --- PERUBAHAN UTAMA: Panggil fungsi dengan menyertakan 'name' ---
         main_app(name)
 
 except KeyError as e:
