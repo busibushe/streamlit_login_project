@@ -383,7 +383,7 @@ def display_channel_analysis(channel_results):
     with col2:
         aov_by_channel = channel_results['aov_by_channel']
         fig2 = px.bar(aov_by_channel, x=aov_by_channel.index, y=aov_by_channel.values, labels={'y': 'Rata-rata Nilai Pesanan (AOV)', 'x': 'Saluran'}, title="AOV per Saluran Penjualan")
-        st.plotly_chart(fig2, use_container_width=Treu)
+        st.plotly_chart(fig2, use_container_width=True)
     highest_aov_channel = channel_results['aov_by_channel'].index[0]
     highest_contrib_channel = channel_results['channel_sales'].index[0]
     st.info(f"""
@@ -733,7 +733,7 @@ def main_app(user_name):
             create_discount_effectiveness_analysis(df_filtered.copy())
             st.markdown("---")
             create_regional_analysis(df_filtered.copy())
-            
+
 # ==============================================================================
 # LOGIKA AUTENTIKASI
 # ==============================================================================
