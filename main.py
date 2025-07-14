@@ -609,131 +609,131 @@ def create_regional_analysis(df):
 # APLIKASI UTAMA STREAMLIT
 # ==============================================================================
 def main_app(user_name):
-    """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
-    if 'data_processed' not in st.session_state:
-        st.session_state.data_processed = False
+    """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
+    if 'data_processed' not in st.session_state:
+        st.session_state.data_processed = False
 
-    # --- SIDEBAR: Autentikasi dan Unggah File (TETAP SAMA) ---
-    if os.path.exists("logo.png"): st.sidebar.image("logo.png", width=150)
-    authenticator.logout("Logout", "sidebar")
-    st.sidebar.success(f"Login sebagai: **{user_name}**")
-    st.sidebar.title("📤 Unggah & Mapping Kolom")
+    # --- SIDEBAR: Autentikasi dan Unggah File (TETAP SAMA) ---
+    if os.path.exists("logo.png"): st.sidebar.image("logo.png", width=150)
+    authenticator.logout("Logout", "sidebar")
+    st.sidebar.success(f"Login sebagai: **{user_name}**")
+    st.sidebar.title("📤 Unggah & Mapping Kolom")
 
-    # ... (Kode untuk upload, mapping, dan tombol proses data tetap sama) ...
-    uploaded_file = st.sidebar.file_uploader(
-        "1. Unggah Sales Report", type=["xlsx", "xls", "csv"],
-        on_change=reset_processing_state
-    )
-    if uploaded_file is None:
-        st.info("👋 Selamat datang! Silakan unggah file data penjualan Anda untuk memulai analisis.")
-        st.stop()
-    df_raw = load_raw_data(uploaded_file)
-    if df_raw is None: st.stop()
-    user_mapping = {}
-    all_cols = [""] + df_raw.columns.tolist()
-    with st.sidebar.expander("Atur Kolom Wajib", expanded=not st.session_state.data_processed):
-        for internal_name, desc in REQUIRED_COLS_MAP.items():
-            best_guess = find_best_column_match(all_cols, internal_name, desc)
-            index = all_cols.index(best_guess) if best_guess else 0
-            key = f"map_req_{internal_name}"
-            user_mapping[internal_name] = st.selectbox(f"**{desc}**:", options=all_cols, index=index, key=key)
-    with st.sidebar.expander("Atur Kolom Opsional"):
-        for internal_name, desc in OPTIONAL_COLS_MAP.items():
-            best_guess = find_best_column_match(all_cols, internal_name, desc)
-            index = all_cols.index(best_guess) if best_guess else 0
-            key = f"map_opt_{internal_name}"
-            user_mapping[internal_name] = st.selectbox(f"**{desc}**:", options=all_cols, index=index, key=key)
-    if st.sidebar.button("✅ Terapkan dan Proses Data", type="primary"):
-        mapped_req_cols = [user_mapping.get(k) for k in REQUIRED_COLS_MAP.keys()]
-        if not all(mapped_req_cols):
-            st.error("❌ Harap petakan semua kolom WAJIB diisi."); st.stop()
-        chosen_cols = [c for c in user_mapping.values() if c]
-        if len(chosen_cols) != len(set(chosen_cols)):
-            st.error("❌ Terdeteksi satu kolom dipilih untuk beberapa peran berbeda."); st.stop()
-        df_processed = process_mapped_data(df_raw, user_mapping)
-        if df_processed is not None:
-            st.session_state.df_processed = df_processed
-            st.session_state.data_processed = True
-            # Reset state multiselect saat data baru diproses
-            if 'multiselect_selected' in st.session_state:
-                del st.session_state.multiselect_selected
-            st.rerun()
+    # ... (Kode untuk upload, mapping, dan tombol proses data tetap sama) ...
+    uploaded_file = st.sidebar.file_uploader(
+        "1. Unggah Sales Report", type=["xlsx", "xls", "csv"],
+        on_change=reset_processing_state
+    )
+    if uploaded_file is None:
+        st.info("👋 Selamat datang! Silakan unggah file data penjualan Anda untuk memulai analisis.")
+        st.stop()
+    df_raw = load_raw_data(uploaded_file)
+    if df_raw is None: st.stop()
+    user_mapping = {}
+    all_cols = [""] + df_raw.columns.tolist()
+    with st.sidebar.expander("Atur Kolom Wajib", expanded=not st.session_state.data_processed):
+        for internal_name, desc in REQUIRED_COLS_MAP.items():
+            best_guess = find_best_column_match(all_cols, internal_name, desc)
+            index = all_cols.index(best_guess) if best_guess else 0
+            key = f"map_req_{internal_name}"
+            user_mapping[internal_name] = st.selectbox(f"**{desc}**:", options=all_cols, index=index, key=key)
+    with st.sidebar.expander("Atur Kolom Opsional"):
+        for internal_name, desc in OPTIONAL_COLS_MAP.items():
+            best_guess = find_best_column_match(all_cols, internal_name, desc)
+            index = all_cols.index(best_guess) if best_guess else 0
+            key = f"map_opt_{internal_name}"
+            user_mapping[internal_name] = st.selectbox(f"**{desc}**:", options=all_cols, index=index, key=key)
+    if st.sidebar.button("✅ Terapkan dan Proses Data", type="primary"):
+        mapped_req_cols = [user_mapping.get(k) for k in REQUIRED_COLS_MAP.keys()]
+        if not all(mapped_req_cols):
+            st.error("❌ Harap petakan semua kolom WAJIB diisi."); st.stop()
+        chosen_cols = [c for c in user_mapping.values() if c]
+        if len(chosen_cols) != len(set(chosen_cols)):
+            st.error("❌ Terdeteksi satu kolom dipilih untuk beberapa peran berbeda."); st.stop()
+        df_processed = process_mapped_data(df_raw, user_mapping)
+        if df_processed is not None:
+            st.session_state.df_processed = df_processed
+            st.session_state.data_processed = True
+            # Reset state multiselect saat data baru diproses
+            if 'multiselect_selected' in st.session_state:
+                del st.session_state.multiselect_selected
+            st.rerun()
 
-    if st.session_state.data_processed:
-        df_processed = st.session_state.df_processed
-        
-        # --- SIDEBAR: Filter Global ---
-        st.sidebar.title("⚙️ Filter Global")
-        
-        # Menggunakan filter selectbox tunggal sementara
-        ALL_BRANCHES_OPTION = "Semua Cabang (Gabungan)"
-        unique_branches = sorted(df_processed['Branch'].unique())
-        branch_options = [ALL_BRANCHES_OPTION] + unique_branches
-        selected_branch = st.sidebar.selectbox("Pilih Cabang", branch_options)
-        
-        min_date, max_date = df_processed['Sales Date'].min().date(), df_processed['Sales Date'].max().date()
-        date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+    if st.session_state.data_processed:
+        df_processed = st.session_state.df_processed
+        
+        # --- SIDEBAR: Filter Global ---
+        st.sidebar.title("⚙️ Filter Global")
+        
+        # Menggunakan filter selectbox tunggal sementara
+        ALL_BRANCHES_OPTION = "Semua Cabang (Gabungan)"
+        unique_branches = sorted(df_processed['Branch'].unique())
+        branch_options = [ALL_BRANCHES_OPTION] + unique_branches
+        selected_branch = st.sidebar.selectbox("Pilih Cabang", branch_options)
+        
+        min_date, max_date = df_processed['Sales Date'].min().date(), df_processed['Sales Date'].max().date()
+        date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 
-        if len(date_range) != 2: st.stop()
-        
-        start_date, end_date = date_range
-        df_filtered_by_date = df_processed[(df_processed['Sales Date'].dt.date >= start_date) & (df_processed['Sales Date'].dt.date <= end_date)]
-        if selected_branch == ALL_BRANCHES_OPTION:
-            df_filtered = df_filtered_by_date
-        else:
-            df_filtered = df_filtered_by_date[df_filtered_by_date['Branch'] == selected_branch]
+        if len(date_range) != 2: st.stop()
+        
+        start_date, end_date = date_range
+        df_filtered_by_date = df_processed[(df_processed['Sales Date'].dt.date >= start_date) & (df_processed['Sales Date'].dt.date <= end_date)]
+        if selected_branch == ALL_BRANCHES_OPTION:
+            df_filtered = df_filtered_by_date
+        else:
+            df_filtered = df_filtered_by_date[df_filtered_by_date['Branch'] == selected_branch]
 
-        if df_filtered.empty:
-            st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih."); st.stop()
-        
-        st.title(f"Dashboard Analisis Penjualan: {selected_branch}")
-        st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
+        if df_filtered.empty:
+            st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih."); st.stop()
+        
+        st.title(f"Dashboard Analisis Penjualan: {selected_branch}")
+        st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
 
-        # --- LAKUKAN SEMUA ANALISIS SEKALI SAJA ---
-        monthly_agg = analyze_monthly_trends(df_filtered)
-        channel_results = calculate_channel_analysis(df_filtered)
-        menu_results = calculate_menu_engineering(df_filtered)
-        ops_results = calculate_operational_efficiency(df_filtered)
-        
-        # --- TAMPILKAN RINGKASAN EKSEKUTIF ---
-        if monthly_agg is not None and len(monthly_agg) >= 3:
-            summary = generate_executive_summary(monthly_agg, channel_results, menu_results, ops_results)
-            display_executive_summary(summary)
+        # --- LAKUKAN SEMUA ANALISIS SEKALI SAJA ---
+        monthly_agg = analyze_monthly_trends(df_filtered)
+        channel_results = calculate_channel_analysis(df_filtered)
+        menu_results = calculate_menu_engineering(df_filtered)
+        ops_results = calculate_operational_efficiency(df_filtered)
+        
+        # --- TAMPILKAN RINGKASAN EKSEKUTIF ---
+        if monthly_agg is not None and len(monthly_agg) >= 3:
+            summary = generate_executive_summary(monthly_agg, channel_results, menu_results, ops_results)
+            display_executive_summary(summary)
 
-        # --- PERUBAHAN 3: Menambahkan tab ketiga "Analisis Strategis" ---
-        trend_tab, ops_tab, strategic_tab = st.tabs([
-            "📈 **Dashboard Tren Performa**", 
-            "🚀 **Dashboard Analisis Operasional**",
-            "🧠 **Analisis Strategis**"
-        ])
+        # --- Menambahkan tab ketiga "Analisis Strategis" ---
+        trend_tab, ops_tab, strategic_tab = st.tabs([
+            "📈 **Dashboard Tren Performa**", 
+            "🚀 **Dashboard Analisis Operasional**",
+            "🧠 **Analisis Strategis**"
+        ])
 
-        with trend_tab:
-            st.header("Analisis Tren Performa Jangka Panjang")
-            if monthly_agg is not None and not monthly_agg.empty:
-                display_monthly_kpis(monthly_agg)
-                display_trend_chart_and_analysis(monthly_agg, 'TotalMonthlySales', 'Penjualan', 'royalblue')
-                display_trend_chart_and_analysis(monthly_agg, 'TotalTransactions', 'Transaksi', 'orange')
-                display_trend_chart_and_analysis(monthly_agg, 'AOV', 'AOV', 'green')
-            else:
-                st.warning("Tidak ada data bulanan yang cukup untuk analisis tren pada periode ini.")
+        with trend_tab:
+            st.header("Analisis Tren Performa Jangka Panjang")
+            if monthly_agg is not None and not monthly_agg.empty:
+                display_monthly_kpis(monthly_agg)
+                display_trend_chart_and_analysis(monthly_agg, 'TotalMonthlySales', 'Penjualan', 'royalblue')
+                display_trend_chart_and_analysis(monthly_agg, 'TotalTransactions', 'Transaksi', 'orange')
+                display_trend_chart_and_analysis(monthly_agg, 'AOV', 'AOV', 'green')
+            else:
+                st.warning("Tidak ada data bulanan yang cukup untuk analisis tren pada periode ini.")
 
-        with ops_tab:
-            st.header("Wawasan Operasional dan Taktis")
-            display_channel_analysis(channel_results)
-            st.markdown("---")
-            display_menu_engineering(menu_results)
-            st.markdown("---")
-            display_operational_efficiency(ops_results)
+        with ops_tab:
+            st.header("Wawasan Operasional dan Taktis")
+            display_channel_analysis(channel_results)
+            st.markdown("---")
+            display_menu_engineering(menu_results)
+            st.markdown("---")
+            display_operational_efficiency(ops_results)
 
-        # --- PERUBAHAN 4: Mengisi tab baru dengan fungsi analisis strategis ---
-        with strategic_tab:
-            st.header("Sintesis dan Analisis Silang")
-            create_waiter_performance_analysis(df_filtered.copy())
-            st.markdown("---")
-            create_discount_effectiveness_analysis(df_filtered.copy())
-            st.markdown("---")
-            create_regional_analysis(df_filtered.copy())
-
+        # --- Mengisi tab baru dengan fungsi analisis strategis ---
+        with strategic_tab:
+            st.header("Sintesis dan Analisis Silang")
+            create_waiter_performance_analysis(df_filtered.copy())
+            st.markdown("---")
+            create_discount_effectiveness_analysis(df_filtered.copy())
+            st.markdown("---")
+            create_regional_analysis(df_filtered.copy())
+            
 # ==============================================================================
 # LOGIKA AUTENTIKASI
 # ==============================================================================
