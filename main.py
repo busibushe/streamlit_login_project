@@ -72,7 +72,7 @@ def find_best_column_match(all_columns, internal_name, description):
                 return col
     return None
 
-def process_mapped_data(df_raw, user_mapping):
+def old_process_mapped_data(df_raw, user_mapping):
     """Memproses DataFrame mentah setelah pemetaan kolom."""
     try:
         df = pd.DataFrame()
@@ -99,6 +99,50 @@ def process_mapped_data(df_raw, user_mapping):
 
         df.dropna(subset=['Sales Date'], inplace=True)
         return df
+    except Exception as e:
+        st.error(f"Terjadi kesalahan saat memproses data: {e}")
+        return None
+
+def process_mapped_data(df_raw, user_mapping):
+    """
+    Memproses DataFrame mentah setelah pemetaan kolom:
+    1. Mengganti nama kolom sesuai mapping.
+    2. Mengonversi tipe data yang benar.
+    3. Membersihkan nilai yang hilang (NaN).
+    """
+    try:
+        df = pd.DataFrame()
+        # Membuat DataFrame baru dengan nama kolom internal
+        for internal_name, source_col in user_mapping.items():
+            if source_col:
+                df[internal_name] = df_raw[source_col]
+
+        # Konversi dan pembersihan tipe data
+        df['Sales Date'] = pd.to_datetime(df['Sales Date'], errors='coerce')
+
+        # --- PERBAIKAN UTAMA DI SINI ---
+        # Tambahkan 'Discount' dan 'Bill Discount' ke daftar kolom numerik
+        numeric_cols = ['Qty', 'Nett Sales', 'Discount', 'Bill Discount']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+        # Pembersihan kolom string
+        string_cols = ['Menu', 'Branch', 'Visit Purpose', 'Payment Method', 'Waiter', 'City']
+        for col in string_cols:
+            if col in df.columns:
+                df[col] = df[col].fillna('N/A').astype(str)
+
+        # Pembersihan kolom waktu opsional
+        for col in ['Sales Date In', 'Sales Date Out']:
+             if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
+        if 'Order Time' in df.columns:
+            df['Order Time'] = pd.to_datetime(df['Order Time'], errors='coerce', format='mixed').dt.time
+
+        df.dropna(subset=['Sales Date'], inplace=True) # Hapus baris tanpa tanggal valid
+        return df
+
     except Exception as e:
         st.error(f"Terjadi kesalahan saat memproses data: {e}")
         return None
