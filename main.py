@@ -749,7 +749,7 @@ def branch_main_app(user_name):
             st.markdown("---")
             display_operational_efficiency(ops_results)
 
-def all_main_app(user_name):
+def main_app(user_name):
     """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
     if 'data_processed' not in st.session_state:
         st.session_state.data_processed = False
@@ -1027,7 +1027,7 @@ def stp_main_app(user_name):
             st.markdown("---")
             display_operational_efficiency(ops_results)
 
-def main_app(user_name):
+def draft_main_app(user_name):
     """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
     if 'data_processed' not in st.session_state:
         st.session_state.data_processed = False
