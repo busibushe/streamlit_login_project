@@ -105,44 +105,38 @@ def old_process_mapped_data(df_raw, user_mapping):
 
 def process_mapped_data(df_raw, user_mapping):
     """
-    Memproses DataFrame mentah setelah pemetaan kolom:
-    1. Mengganti nama kolom sesuai mapping.
-    2. Mengonversi tipe data yang benar.
-    3. Membersihkan nilai yang hilang (NaN).
+    Memproses DataFrame mentah setelah pemetaan kolom.
     """
     try:
         df = pd.DataFrame()
-        # Membuat DataFrame baru dengan nama kolom internal
         for internal_name, source_col in user_mapping.items():
             if source_col:
                 df[internal_name] = df_raw[source_col]
 
-        # Konversi dan pembersihan tipe data
         df['Sales Date'] = pd.to_datetime(df['Sales Date'], errors='coerce')
-
-        # --- PERBAIKAN UTAMA DI SINI ---
-        # Tambahkan 'Discount' dan 'Bill Discount' ke daftar kolom numerik
+        
         numeric_cols = ['Qty', 'Nett Sales', 'Discount', 'Bill Discount']
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-        # Pembersihan kolom string
         string_cols = ['Menu', 'Branch', 'Visit Purpose', 'Payment Method', 'Waiter', 'City']
         for col in string_cols:
             if col in df.columns:
                 df[col] = df[col].fillna('N/A').astype(str)
 
-        # Pembersihan kolom waktu opsional
         for col in ['Sales Date In', 'Sales Date Out']:
              if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
+        
+        # --- PERBAIKAN 1: Standarisasi 'Order Time' di sini ---
         if 'Order Time' in df.columns:
-            df['Order Time'] = pd.to_datetime(df['Order Time'], errors='coerce', format='mixed').dt.time
+            # Konversi ke string dulu untuk standardisasi, lalu ke datetime.
+            # Jangan gunakan .dt.time agar informasi tanggal tetap ada (meski default).
+            df['Order Time'] = pd.to_datetime(df['Order Time'].astype(str), errors='coerce')
 
-        df.dropna(subset=['Sales Date'], inplace=True) # Hapus baris tanpa tanggal valid
+        df.dropna(subset=['Sales Date'], inplace=True)
         return df
-
     except Exception as e:
         st.error(f"Terjadi kesalahan saat memproses data: {e}")
         return None
@@ -244,7 +238,7 @@ def calculate_menu_engineering(df):
     stars = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] > avg_sales)]
     workhorses = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] <= avg_sales)]
     return {'data': menu_perf, 'avg_qty': avg_qty, 'avg_sales': avg_sales, 'stars': stars, 'workhorses': workhorses}
-def calculate_operational_efficiency(df):
+def old_calculate_operational_efficiency(df):
     """Menghitung data untuk analisis efisiensi operasional."""
     required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
     if not all(col in df.columns for col in required_cols):
@@ -260,6 +254,45 @@ def calculate_operational_efficiency(df):
     if len(agg_by_hour) > 2:
         correlation, p_value = stats.spearmanr(agg_by_hour['TotalTransactions'], agg_by_hour['AvgPrepTime'])
     return {'data': df_eff,'agg_by_hour': agg_by_hour,'kpis': {'mean': df_eff['Prep Time (Seconds)'].mean(),'min': df_eff['Prep Time (Seconds)'].min(),'max': df_eff['Prep Time (Seconds)'].max()},'stats': {'correlation': correlation,'p_value': p_value}}
+def calculate_operational_efficiency(df):
+    """Menghitung data untuk analisis efisiensi operasional."""
+    required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
+    if not all(col in df.columns for col in required_cols):
+        return None
+        
+    df_eff = df.dropna(subset=['Sales Date In', 'Sales Date Out', 'Order Time']).copy()
+    if df_eff.empty: return None
+
+    df_eff['Prep Time (Seconds)'] = (df_eff['Sales Date Out'] - df_eff['Sales Date In']).dt.total_seconds()
+    df_eff = df_eff[df_eff['Prep Time (Seconds)'].between(0, 3600)]
+    if df_eff.empty: return None
+
+    # --- PERBAIKAN 2: Ekstrak jam secara langsung dari kolom datetime ---
+    # Ini lebih aman dan menghilangkan warning
+    df_eff['Hour'] = df_eff['Order Time'].dt.hour
+    
+    agg_by_hour = df_eff.groupby('Hour').agg(
+        AvgPrepTime=('Prep Time (Seconds)', 'mean'),
+        TotalTransactions=('Bill Number', 'nunique')
+    ).reset_index()
+    
+    correlation, p_value = None, None
+    if len(agg_by_hour) > 2:
+        correlation, p_value = stats.spearmanr(agg_by_hour['TotalTransactions'], agg_by_hour['AvgPrepTime'])
+        
+    return {
+        'data': df_eff,
+        'agg_by_hour': agg_by_hour,
+        'kpis': {
+            'mean': df_eff['Prep Time (Seconds)'].mean(),
+            'min': df_eff['Prep Time (Seconds)'].min(),
+            'max': df_eff['Prep Time (Seconds)'].max()
+        },
+        'stats': {
+            'correlation': correlation,
+            'p_value': p_value
+        }
+    }
 def generate_executive_summary(monthly_agg, channel_results, menu_results, ops_results):
     """Menciptakan ringkasan eksekutif otomatis berdasarkan hasil analisis yang sudah dihitung."""
     analyses = {'Penjualan': analyze_trend_v3(monthly_agg, 'TotalMonthlySales', 'Penjualan'),'Transaksi': analyze_trend_v3(monthly_agg, 'TotalTransactions', 'Transaksi'),'AOV': analyze_trend_v3(monthly_agg, 'AOV', 'AOV')}
