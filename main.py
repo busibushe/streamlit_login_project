@@ -550,7 +550,7 @@ def display_operational_efficiency(ops_results):
             st.warning("Tidak cukup data per jam untuk melakukan uji korelasi statistik.")
 
 # --- PERUBAHAN 2: Menambahkan fungsi-fungsi analisis strategis di sini ---
-def create_waiter_performance_analysis(df):
+def old_create_waiter_performance_analysis(df):
     """Menganalisis performa pramusaji melampaui total penjualan."""
     st.subheader("👨‍🍳 Analisis Kinerja Pramusaji (Waiter)")
     if 'Waiter' not in df.columns:
@@ -598,6 +598,58 @@ def create_waiter_performance_analysis(df):
     with st.expander("Lihat Data Kinerja Pramusaji Lengkap"):
         st.dataframe(waiter_perf.sort_values('TotalSales', ascending=False), use_container_width=True)
 
+def create_waiter_performance_analysis(df):
+    """Menganalisis performa pramusaji melampaui total penjualan."""
+    st.subheader("👨‍🍳 Analisis Kinerja Pramusaji (Waiter)")
+    if 'Waiter' not in df.columns:
+        st.warning("Kolom 'Waiter' tidak dipetakan. Analisis ini tidak tersedia.")
+        return
+
+    waiter_perf = df.groupby('Waiter').agg(
+        TotalSales=('Nett Sales', 'sum'),
+        TotalTransactions=('Bill Number', 'nunique'),
+        TotalDiscount=('Discount', 'sum')
+    ).reset_index()
+    
+    waiter_perf = waiter_perf[waiter_perf['TotalTransactions'] > 0].copy()
+    if waiter_perf.empty:
+        st.info("Tidak ada data kinerja pramusaji yang valid untuk ditampilkan.")
+        return
+
+    waiter_perf['AOV'] = waiter_perf['TotalSales'] / waiter_perf['TotalTransactions']
+    waiter_perf['DiscountRate'] = (waiter_perf['TotalDiscount'] / (waiter_perf['TotalSales'] + waiter_perf['TotalDiscount'])).fillna(0)
+
+    col1, col2, col3 = st.columns(3)
+    top_sales = waiter_perf.nlargest(1, 'TotalSales')
+    if not top_sales.empty:
+        # --- PERBAIKAN 1 ---
+        sales_value = float(top_sales['TotalSales'].iloc[0])
+        col1.metric("Penjualan Tertinggi", top_sales['Waiter'].iloc[0], f"Rp {sales_value:,.0f}")
+
+    top_aov = waiter_perf.nlargest(1, 'AOV')
+    if not top_aov.empty:
+        # --- PERBAIKAN 2 ---
+        aov_value = float(top_aov['AOV'].iloc[0])
+        col2.metric("AOV Tertinggi (Upseller)", top_aov['Waiter'].iloc[0], f"Rp {aov_value:,.0f}")
+    
+    discounter_perf = waiter_perf[waiter_perf['DiscountRate'] > 0]
+    top_discounter = discounter_perf.nlargest(1, 'DiscountRate')
+    if not top_discounter.empty:
+        # --- PERBAIKAN 3 (Paling Kritis) ---
+        discount_rate_value = float(top_discounter['DiscountRate'].iloc[0])
+        col3.metric("Rasio Diskon Tertinggi", top_discounter['Waiter'].iloc[0], f"{discount_rate_value:.1%}")
+    else:
+        col3.metric("Rasio Diskon Tertinggi", "-", "Tidak Ada Diskon")
+
+
+    st.info("""
+    **Insight Aksi:**
+    - **Pahlawan AOV vs. Penjualan**: Perhatikan pramusaji dengan AOV tertinggi, bukan hanya penjualan tertinggi. Mereka adalah *upseller* terbaik Anda. Jadikan mereka contoh atau mentor.
+    - **Waspadai 'Raja Diskon'**: Selidiki mengapa pramusaji dengan rasio diskon tertinggi sering memberikan diskon. Apakah itu strategi atau masalah yang perlu ditangani?
+    """)
+    with st.expander("Lihat Data Kinerja Pramusaji Lengkap"):
+        st.dataframe(waiter_perf.sort_values('TotalSales', ascending=False), use_container_width=True)
+        
 def old_create_discount_effectiveness_analysis(df):
     """Menganalisis apakah diskon efektif meningkatkan belanja pelanggan."""
     st.subheader("📉 Analisis Efektivitas Diskon")
@@ -639,9 +691,6 @@ def old_create_discount_effectiveness_analysis(df):
             st.warning(f"⚠️ **Potensi Kanibalisasi**: Diskon tidak meningkatkan AOV secara signifikan (perubahan {diff:.1%}). Ada risiko diskon hanya mengurangi profit tanpa mendorong pelanggan untuk belanja lebih banyak.")
     else:
         st.info("Tidak ada cukup data untuk membandingkan AOV dengan dan tanpa diskon.")
-
-import streamlit as st
-import pandas as pd
 
 def create_discount_effectiveness_analysis(df):
     """
@@ -697,7 +746,7 @@ def create_discount_effectiveness_analysis(df):
             st.warning(f"⚠️ **Potensi Kanibalisasi**: Diskon tidak meningkatkan AOV secara signifikan (perubahan {diff:.1%}). Ada risiko diskon hanya mengurangi profit tanpa mendorong pelanggan untuk belanja lebih banyak.")
     else:
         st.info("Tidak ada cukup data untuk membandingkan AOV dengan dan tanpa diskon.")
-                
+
 def create_regional_analysis(df):
     """Menganalisis perbedaan performa dan preferensi antar kota."""
     st.subheader("🏙️ Analisis Kinerja Regional")
