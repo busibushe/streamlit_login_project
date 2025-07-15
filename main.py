@@ -241,6 +241,41 @@ def calculate_operational_efficiency(df):
             'p_value': p_value
         }
     }
+def calculate_discount_effectiveness(df):
+    """
+    Menghitung efektivitas diskon dan mengembalikan hasilnya dalam bentuk dictionary.
+    Fungsi ini tidak menampilkan apapun di UI.
+    """
+    if 'Discount' not in df.columns or 'Bill Discount' not in df.columns:
+        return None
+        
+    df_analysis = df.copy()
+    df_analysis['TotalDiscount'] = df_analysis['Discount'] + df_analysis['Bill Discount']
+    df_analysis['HasDiscount'] = df_analysis['TotalDiscount'] > 0
+    
+    if df_analysis['HasDiscount'].nunique() < 2:
+        return None
+        
+    bill_agg = df_analysis.groupby('Bill Number').agg(
+        NettSales=('Nett Sales', 'sum'),
+        HasDiscount=('HasDiscount', 'max')
+    )
+    
+    aov_comparison = bill_agg.groupby('HasDiscount')['NettSales'].mean()
+    
+    if True in aov_comparison.index and False in aov_comparison.index:
+        aov_with_discount = float(aov_comparison.loc[True])
+        aov_without_discount = float(aov_comparison.loc[False])
+        
+        # Hindari pembagian dengan nol jika AOV tanpa diskon adalah 0
+        if aov_without_discount > 0:
+            diff = (aov_with_discount - aov_without_discount) / aov_without_discount
+        else:
+            diff = float('inf') # Anggap tak terhingga jika AOV awal adalah 0
+
+        return {'is_effective': diff > 0.05, 'aov_lift': diff}
+        
+    return None
 def generate_executive_summary(monthly_agg, channel_results, menu_results, ops_results):
     """Menciptakan ringkasan eksekutif otomatis berdasarkan hasil analisis yang sudah dihitung."""
     analyses = {'Penjualan': analyze_trend_v3(monthly_agg, 'TotalMonthlySales', 'Penjualan'),'Transaksi': analyze_trend_v3(monthly_agg, 'TotalTransactions', 'Transaksi'),'AOV': analyze_trend_v3(monthly_agg, 'AOV', 'AOV')}
