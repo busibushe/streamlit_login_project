@@ -11,7 +11,6 @@ import plotly.graph_objects as go
 # ==============================================================================
 # KONFIGURASI APLIKASI
 # ==============================================================================
-
 st.set_page_config(
     page_title="Dashboard F&B Holistik",
     page_icon="🚀",
@@ -27,7 +26,6 @@ REQUIRED_COLS_MAP = {
     'Menu': 'Nama Item/Menu',
     'Qty': 'Kuantitas'
 }
-# --- PERUBAHAN 1: Menambahkan kolom baru untuk analisis strategis ---
 OPTIONAL_COLS_MAP = {
     'Visit Purpose': 'Saluran Penjualan',
     'Payment Method': 'Metode Pembayaran',
@@ -43,7 +41,6 @@ OPTIONAL_COLS_MAP = {
 # ==============================================================================
 # FUNGSI-FUNGSI PEMROSESAN & UI HELPER
 # ==============================================================================
-
 @st.cache_data
 def load_raw_data(file):
     """Memuat data mentah dari file yang diunggah dengan penanganan error."""
@@ -71,37 +68,6 @@ def find_best_column_match(all_columns, internal_name, description):
                 return col
     return None
 
-def old_process_mapped_data(df_raw, user_mapping):
-    """Memproses DataFrame mentah setelah pemetaan kolom."""
-    try:
-        df = pd.DataFrame()
-        for internal_name, source_col in user_mapping.items():
-            if source_col:
-                df[internal_name] = df_raw[source_col]
-
-        df['Sales Date'] = pd.to_datetime(df['Sales Date'], errors='coerce')
-        numeric_cols = ['Qty', 'Nett Sales', 'Discount', 'Bill Discount']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-        string_cols = ['Menu', 'Branch', 'Visit Purpose', 'Payment Method', 'Waiter', 'City']
-        for col in string_cols:
-            if col in df.columns:
-                df[col] = df[col].fillna('N/A').astype(str)
-
-        for col in ['Sales Date In', 'Sales Date Out']:
-             if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors='coerce')
-        if 'Order Time' in df.columns:
-            df['Order Time'] = pd.to_datetime(df['Order Time'], errors='coerce', format='mixed').dt.time
-
-        df.dropna(subset=['Sales Date'], inplace=True)
-        return df
-    except Exception as e:
-        st.error(f"Terjadi kesalahan saat memproses data: {e}")
-        return None
-
 def process_mapped_data(df_raw, user_mapping):
     """
     Memproses DataFrame mentah setelah pemetaan kolom.
@@ -128,10 +94,7 @@ def process_mapped_data(df_raw, user_mapping):
              if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
         
-        # --- PERBAIKAN 1: Standarisasi 'Order Time' di sini ---
         if 'Order Time' in df.columns:
-            # Konversi ke string dulu untuk standardisasi, lalu ke datetime.
-            # Jangan gunakan .dt.time agar informasi tanggal tetap ada (meski default).
             df['Order Time'] = pd.to_datetime(df['Order Time'].astype(str), errors='coerce')
 
         df.dropna(subset=['Sales Date'], inplace=True)
@@ -178,8 +141,6 @@ def create_all_inclusive_multiselect(df, column_name):
 # ==============================================================================
 # FUNGSI-FUNGSI ANALISIS & VISUALISASI
 # ==============================================================================
-
-# ... (Semua fungsi analisis dari 'analyze_monthly_trends' hingga 'display_operational_efficiency' tetap sama) ...
 def analyze_monthly_trends(df_filtered):
     """Menghitung agregasi data bulanan untuk metrik kunci (Penjualan, Transaksi, AOV)."""
     monthly_df = df_filtered.copy()
@@ -189,6 +150,7 @@ def analyze_monthly_trends(df_filtered):
         monthly_agg['AOV'] = monthly_agg.apply(lambda row: row['TotalMonthlySales'] / row['TotalTransactions'] if row['TotalTransactions'] > 0 else 0, axis=1)
         monthly_agg['Bulan'] = monthly_agg['Bulan'].dt.to_timestamp()
     return monthly_agg
+
 def analyze_trend_v3(df_monthly, metric_col, metric_label):
     """Menganalisis tren dengan wawasan bisnis F&B: Tren Linear, YoY, dan Momentum."""
     if len(df_monthly.dropna(subset=[metric_col])) < 3:
@@ -218,6 +180,7 @@ def analyze_trend_v3(df_monthly, metric_col, metric_label):
     extrema_narrative = f" Performa tertinggi tercatat pada **{max_perf_month['Bulan'].strftime('%B %Y')}** dan terendah pada **{min_perf_month['Bulan'].strftime('%B %Y')}**."
     full_narrative = f"Secara keseluruhan, tren {metric_label} cenderung {trend_type}.{momentum_narrative}{yoy_narrative}{extrema_narrative}"
     return {'narrative': full_narrative, 'trendline': trendline, 'ma_line': ma_line, 'p_value': p_value}
+
 def calculate_channel_analysis(df):
     """Menghitung data untuk analisis saluran penjualan."""
     if 'Visit Purpose' not in df.columns or df['Visit Purpose'].nunique() < 1:
@@ -227,6 +190,7 @@ def calculate_channel_analysis(df):
     agg_data['AOV'] = agg_data['TotalSales'] / agg_data['TotalBills']
     aov_by_channel = agg_data['AOV'].sort_values(ascending=False)
     return {'channel_sales': channel_sales, 'aov_by_channel': aov_by_channel}
+
 def calculate_menu_engineering(df):
     """Menghitung data untuk analisis performa menu (menu engineering)."""
     if 'Menu' not in df.columns or df['Menu'].nunique() < 4:
@@ -237,22 +201,7 @@ def calculate_menu_engineering(df):
     stars = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] > avg_sales)]
     workhorses = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] <= avg_sales)]
     return {'data': menu_perf, 'avg_qty': avg_qty, 'avg_sales': avg_sales, 'stars': stars, 'workhorses': workhorses}
-def old_calculate_operational_efficiency(df):
-    """Menghitung data untuk analisis efisiensi operasional."""
-    required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
-    if not all(col in df.columns for col in required_cols):
-        return None
-    df_eff = df.dropna(subset=['Sales Date In', 'Sales Date Out', 'Order Time']).copy()
-    if df_eff.empty: return None
-    df_eff['Prep Time (Seconds)'] = (df_eff['Sales Date Out'] - df_eff['Sales Date In']).dt.total_seconds()
-    df_eff = df_eff[df_eff['Prep Time (Seconds)'].between(0, 3600)]
-    if df_eff.empty: return None
-    df_eff['Hour'] = pd.to_datetime(df_eff['Order Time'].astype(str), errors='coerce').dt.hour
-    agg_by_hour = df_eff.groupby('Hour').agg(AvgPrepTime=('Prep Time (Seconds)', 'mean'), TotalTransactions=('Bill Number', 'nunique')).reset_index()
-    correlation, p_value = None, None
-    if len(agg_by_hour) > 2:
-        correlation, p_value = stats.spearmanr(agg_by_hour['TotalTransactions'], agg_by_hour['AvgPrepTime'])
-    return {'data': df_eff,'agg_by_hour': agg_by_hour,'kpis': {'mean': df_eff['Prep Time (Seconds)'].mean(),'min': df_eff['Prep Time (Seconds)'].min(),'max': df_eff['Prep Time (Seconds)'].max()},'stats': {'correlation': correlation,'p_value': p_value}}
+
 def calculate_operational_efficiency(df):
     """Menghitung data untuk analisis efisiensi operasional."""
     required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
@@ -266,8 +215,6 @@ def calculate_operational_efficiency(df):
     df_eff = df_eff[df_eff['Prep Time (Seconds)'].between(0, 3600)]
     if df_eff.empty: return None
 
-    # --- PERBAIKAN 2: Ekstrak jam secara langsung dari kolom datetime ---
-    # Ini lebih aman dan menghilangkan warning
     df_eff['Hour'] = df_eff['Order Time'].dt.hour
     
     agg_by_hour = df_eff.groupby('Hour').agg(
@@ -292,7 +239,66 @@ def calculate_operational_efficiency(df):
             'p_value': p_value
         }
     }
-def generate_executive_summary(monthly_agg, channel_results, menu_results, ops_results):
+
+# --- FUNGSI KALKULATOR BARU UNTUK EXECUTIVE SUMMARY ---
+def calculate_waiter_performance(df):
+    if 'Waiter' not in df.columns:
+        return None
+    waiter_perf = df.groupby('Waiter').agg(
+        TotalSales=('Nett Sales', 'sum'),
+        TotalTransactions=('Bill Number', 'nunique'),
+        TotalDiscount=('Discount', 'sum')
+    ).reset_index()
+    waiter_perf = waiter_perf[waiter_perf['TotalTransactions'] > 0].copy()
+    if waiter_perf.empty:
+        return None
+    waiter_perf['AOV'] = waiter_perf['TotalSales'] / waiter_perf['TotalTransactions']
+    waiter_perf['DiscountRate'] = (waiter_perf['TotalDiscount'] / (waiter_perf['TotalSales'] + waiter_perf['TotalDiscount'])).fillna(0)
+    top_aov_waiter = waiter_perf.nlargest(1, 'AOV')
+    return {
+        'top_aov_waiter_name': top_aov_waiter['Waiter'].iloc[0] if not top_aov_waiter.empty else None
+    }
+
+def calculate_discount_effectiveness(df):
+    if 'Discount' not in df.columns or 'Bill Discount' not in df.columns:
+        return None
+    df_analysis = df.copy()
+    df_analysis['TotalDiscount'] = df_analysis['Discount'] + df_analysis['Bill Discount']
+    df_analysis['HasDiscount'] = df_analysis['TotalDiscount'] > 0
+    if df_analysis['HasDiscount'].nunique() < 2:
+        return None
+    bill_agg = df_analysis.groupby('Bill Number').agg(
+        NettSales=('Nett Sales', 'sum'),
+        HasDiscount=('HasDiscount', 'max')
+    )
+    aov_comparison = bill_agg.groupby('HasDiscount')['NettSales'].mean()
+    if True in aov_comparison.index and False in aov_comparison.index:
+        aov_with_discount = float(aov_comparison.loc[True])
+        aov_without_discount = float(aov_comparison.loc[False])
+        diff = (aov_with_discount - aov_without_discount) / aov_without_discount
+        return {'is_effective': diff > 0.05, 'aov_lift': diff}
+    return None
+
+def calculate_regional_performance(df):
+    if 'City' not in df.columns or df['City'].nunique() < 2:
+        return None
+    city_perf = df.groupby('City').agg(
+        TotalSales=('Nett Sales', 'sum'),
+        TotalTransactions=('Bill Number', 'nunique')
+    ).reset_index()
+    city_perf = city_perf[city_perf['TotalTransactions'] > 0]
+    if city_perf.empty:
+        return None
+    city_perf['AOV'] = city_perf['TotalSales'] / city_perf['TotalTransactions']
+    top_sales_city = city_perf.nlargest(1, 'TotalSales')
+    top_aov_city = city_perf.nlargest(1, 'AOV')
+    return {
+        'top_sales_city_name': top_sales_city['City'].iloc[0] if not top_sales_city.empty else None,
+        'top_aov_city_name': top_aov_city['City'].iloc[0] if not top_aov_city.empty else None,
+    }
+
+# --- MODIFIKASI: generate_executive_summary ---
+def generate_executive_summary(monthly_agg, channel_results, menu_results, ops_results, waiter_results, discount_results, regional_results):
     """Menciptakan ringkasan eksekutif otomatis berdasarkan hasil analisis yang sudah dihitung."""
     analyses = {'Penjualan': analyze_trend_v3(monthly_agg, 'TotalMonthlySales', 'Penjualan'),'Transaksi': analyze_trend_v3(monthly_agg, 'TotalTransactions', 'Transaksi'),'AOV': analyze_trend_v3(monthly_agg, 'AOV', 'AOV')}
     score_details = {}
@@ -334,7 +340,10 @@ def generate_executive_summary(monthly_agg, channel_results, menu_results, ops_r
         health_context_narrative = "⚠️ **Perhatian:** Penjualan naik karena **volume transaksi yang tinggi**, namun AOV turun. Ini bisa jadi sinyal **terlalu banyak diskon** atau pergeseran ke produk yang lebih murah."
     elif sales_down and trx_up and aov_down:
         health_context_narrative = "🚨 **Waspada:** Jumlah transaksi mungkin naik, tapi **penurunan AOV yang tajam** menekan total penjualan secara signifikan. Analisis strategi harga dan promosi."
+    
+    # --- MULAI INTEGRASI REKOMENDASI BARU ---
     recommendations = []
+    # Rekomendasi Menu
     if menu_results:
         if not menu_results['stars'].empty:
             top_star = menu_results['stars'].nlargest(1, 'NettSales')['Menu'].iloc[0]
@@ -342,19 +351,43 @@ def generate_executive_summary(monthly_agg, channel_results, menu_results, ops_r
         if not menu_results['workhorses'].empty:
             top_workhorse = menu_results['workhorses'].nlargest(1, 'Qty')['Menu'].iloc[0]
             recommendations.append(f"🐴 **Optimalkan Profit:** Menu **'{top_workhorse}'** sangat laku, pertimbangkan menaikkan harga atau buat paket bundling.")
+    
+    # Rekomendasi Saluran Penjualan
     if channel_results:
         highest_contrib_channel = channel_results['channel_sales'].idxmax()
         highest_aov_channel = channel_results['aov_by_channel'].idxmax()
         if highest_contrib_channel == highest_aov_channel:
-             recommendations.append(f"🏆 **Maksimalkan Saluran Utama:** Saluran **'{highest_contrib_channel}'** adalah kontributor terbesar DAN memiliki AOV tertinggi. Prioritaskan segalanya di sini!")
+             recommendations.append(f"🏆 **Maksimalkan Saluran Utama:** Saluran **'{highest_contrib_channel}'** adalah kontributor terbesar DAN memiliki AOV tertinggi. Prioritaskan!")
         else:
-             recommendations.append(f"💰 **Jaga Kontributor Terbesar:** Pertahankan performa saluran **'{highest_contrib_channel}'** yang menjadi penyumbang pendapatan utama Anda.")
-             recommendations.append(f"📈 **Tingkatkan Frekuensi Saluran AOV Tinggi:** Pelanggan di **'{highest_aov_channel}'** belanja paling banyak per transaksi. Buat program loyalitas untuk mereka.")
+             recommendations.append(f"💰 **Jaga Kontributor Terbesar:** Pertahankan performa saluran **'{highest_contrib_channel}'** yang menjadi penyumbang pendapatan utama.")
+             recommendations.append(f"📈 **Tingkatkan Frekuensi di Saluran AOV Tinggi:** Pelanggan di **'{highest_aov_channel}'** belanja paling banyak. Buat program loyalitas untuk mereka.")
+
+    # Rekomendasi Efisiensi Operasional
     if ops_results and ops_results['stats']['p_value'] is not None:
         if ops_results['stats']['p_value'] < 0.05 and ops_results['stats']['correlation'] > 0.3:
             peak_hour = ops_results['agg_by_hour'].loc[ops_results['agg_by_hour']['TotalTransactions'].idxmax()]['Hour']
-            recommendations.append(f"⏱️ **Atasi Kepadatan:** Layanan melambat saat ramai (terbukti statistik). Tambah sumber daya pada jam puncak sekitar pukul **{int(peak_hour)}:00**.")
+            recommendations.append(f"⏱️ **Atasi Kepadatan:** Layanan melambat saat ramai. Tambah sumber daya pada jam puncak sekitar pukul **{int(peak_hour)}:00**.")
+
+    # Rekomendasi Pramusaji (Waiter)
+    if waiter_results and waiter_results.get('top_aov_waiter_name'):
+        waiter_name = waiter_results['top_aov_waiter_name']
+        recommendations.append(f"👨‍🍳 **Pelajari dari 'Top Upseller':** Pramusaji **'{waiter_name}'** memiliki AOV tertinggi. Jadikan teknik penjualannya sebagai materi pelatihan tim.")
+
+    # Rekomendasi Efektivitas Diskon
+    if discount_results:
+        if not discount_results['is_effective']:
+            aov_lift_percent = discount_results['aov_lift']
+            recommendations.append(f"📉 **Evaluasi Strategi Diskon:** Diskon saat ini **tidak efektif** menaikkan AOV (perubahan hanya **{aov_lift_percent:.1%}**). Kaji ulang mekanisme promosi agar tidak menggerus profit.")
+
+    # Rekomendasi Regional
+    if regional_results and regional_results.get('top_sales_city_name'):
+        city_name = regional_results['top_sales_city_name']
+        if city_name != regional_results.get('top_aov_city_name'):
+             recommendations.append(f"🏙️ **Adaptasi Strategi Regional:** Kota **'{city_name}'** adalah penyumbang penjualan terbesar. Pelajari strategi sukses di sana untuk diterapkan di kota lain.")
+    # --- SELESAI INTEGRASI REKOMENDASI BARU ---
+
     return {"health_status": health_status, "health_color": health_color, "yoy_change": yoy_change_value,"trend_narrative": analyses['Penjualan'].get('narrative', 'Gagal menganalisis tren penjualan.'),"health_context_narrative": health_context_narrative, "score_details": score_details,"recommendations": recommendations, "next_focus": "Pantau dampak eksekusi rekomendasi pada AOV, Transaksi, dan Kecepatan Layanan."}
+
 def display_executive_summary(summary):
     """Menampilkan ringkasan eksekutif dengan layout baris tunggal yang jernih."""
     def format_score_with_arrows(score):
@@ -409,6 +442,7 @@ def display_executive_summary(summary):
             st.markdown("**Rekomendasi Aksi Teratas:** Tidak ada rekomendasi aksi prioritas spesifik untuk periode ini.")
         st.markdown("---")
         st.success(f"🎯 **Fokus Bulan Depan:** {summary['next_focus']}")
+
 def display_monthly_kpis(monthly_agg):
     """Menampilkan KPI bulanan teratas dengan perbandingan bulan sebelumnya."""
     kpi_cols = st.columns(3)
@@ -425,6 +459,7 @@ def display_monthly_kpis(monthly_agg):
     display_kpi(kpi_cols[1], "🛒 Transaksi Bulanan", last_month.get('TotalTransactions'), prev_month.get('TotalTransactions') if prev_month is not None else None, help_str, False)
     display_kpi(kpi_cols[2], "💳 AOV Bulanan", last_month.get('AOV'), prev_month.get('AOV') if prev_month is not None else None, help_str, True)
     st.markdown("---")
+
 def display_trend_chart_and_analysis(df_data, y_col, y_label, color):
     """Membuat grafik tren lengkap dengan garis tren, moving average, dan narasi analisis."""
     analysis_result = analyze_trend_v3(df_data, y_col, y_label)
@@ -445,6 +480,7 @@ def display_trend_chart_and_analysis(df_data, y_col, y_label, color):
             else:
                 st.warning("⚠️ Karena kemungkinan kebetulan cukup tinggi (≥ 5%), tren ini **tidak signifikan secara statistik**.")
     st.markdown("---")
+
 def display_channel_analysis(channel_results):
     """Menampilkan visualisasi untuk analisis saluran penjualan."""
     st.subheader("📊 Analisis Saluran Penjualan")
@@ -467,6 +503,7 @@ def display_channel_analysis(channel_results):
     - **Kontributor Terbesar:** Saluran **{highest_contrib_channel}** adalah penyumbang pendapatan terbesar.
     - **Nilai Pesanan Tertinggi:** Pelanggan dari saluran **{highest_aov_channel}** cenderung menghabiskan lebih banyak per transaksi.
     """)
+
 def display_menu_engineering(menu_results):
     """Menampilkan visualisasi kuadran untuk menu engineering."""
     st.subheader("🔬 Analisis Performa Menu")
@@ -505,6 +542,7 @@ def display_menu_engineering(menu_results):
         - **<span style='color:blue; font-weight:bold;'>PUZZLES 🤔 (Kiri Atas):</span>** Sangat profit, jarang dipesan. **Aksi: Promosikan atau latih staf.**
         - **<span style='color:red; font-weight:bold;'>DOGS 🐶 (Kiri Bawah):</span>** Kurang populer & profit. **Aksi: Pertimbangkan hapus dari menu.**
         """, unsafe_allow_html=True)
+
 def display_operational_efficiency(ops_results):
     """Menampilkan visualisasi dan insight untuk efisiensi operasional."""
     st.subheader("⏱️ Analisis Efisiensi Operasional")
@@ -549,55 +587,6 @@ def display_operational_efficiency(ops_results):
         else:
             st.warning("Tidak cukup data per jam untuk melakukan uji korelasi statistik.")
 
-# --- PERUBAHAN 2: Menambahkan fungsi-fungsi analisis strategis di sini ---
-def old_create_waiter_performance_analysis(df):
-    """Menganalisis performa pramusaji melampaui total penjualan."""
-    st.subheader("👨‍🍳 Analisis Kinerja Pramusaji (Waiter)")
-    if 'Waiter' not in df.columns:
-        st.warning("Kolom 'Waiter' tidak dipetakan. Analisis ini tidak tersedia.")
-        return
-
-    waiter_perf = df.groupby('Waiter').agg(
-        TotalSales=('Nett Sales', 'sum'),
-        TotalTransactions=('Bill Number', 'nunique'),
-        TotalDiscount=('Discount', 'sum')
-    ).reset_index()
-    
-    # Filter out waiters with no transactions to avoid division by zero
-    waiter_perf = waiter_perf[waiter_perf['TotalTransactions'] > 0].copy()
-    if waiter_perf.empty:
-        st.info("Tidak ada data kinerja pramusaji yang valid untuk ditampilkan.")
-        return
-
-    waiter_perf['AOV'] = waiter_perf['TotalSales'] / waiter_perf['TotalTransactions']
-    waiter_perf['DiscountRate'] = (waiter_perf['TotalDiscount'] / (waiter_perf['TotalSales'] + waiter_perf['TotalDiscount'])).fillna(0)
-
-    col1, col2, col3 = st.columns(3)
-    top_sales = waiter_perf.nlargest(1, 'TotalSales')
-    if not top_sales.empty:
-        col1.metric("Penjualan Tertinggi", top_sales['Waiter'].iloc[0], f"Rp {top_sales['TotalSales'].iloc[0]:,.0f}")
-
-    top_aov = waiter_perf.nlargest(1, 'AOV')
-    if not top_aov.empty:
-        col2.metric("AOV Tertinggi (Upseller)", top_aov['Waiter'].iloc[0], f"Rp {top_aov['AOV'].iloc[0]:,.0f}")
-    
-    # Filter for waiters who actually gave discounts
-    discounter_perf = waiter_perf[waiter_perf['DiscountRate'] > 0]
-    top_discounter = discounter_perf.nlargest(1, 'DiscountRate')
-    if not top_discounter.empty:
-        col3.metric("Rasio Diskon Tertinggi", top_discounter['Waiter'].iloc[0], f"{top_discounter['DiscountRate']:.1%}")
-    else:
-        col3.metric("Rasio Diskon Tertinggi", "-", "Tidak Ada Diskon")
-
-
-    st.info("""
-    **Insight Aksi:**
-    - **Pahlawan AOV vs. Penjualan**: Perhatikan pramusaji dengan AOV tertinggi, bukan hanya penjualan tertinggi. Mereka adalah *upseller* terbaik Anda. Jadikan mereka contoh atau mentor.
-    - **Waspadai 'Raja Diskon'**: Selidiki mengapa pramusaji dengan rasio diskon tertinggi sering memberikan diskon. Apakah itu strategi atau masalah yang perlu ditangani?
-    """)
-    with st.expander("Lihat Data Kinerja Pramusaji Lengkap"):
-        st.dataframe(waiter_perf.sort_values('TotalSales', ascending=False), use_container_width=True)
-
 def create_waiter_performance_analysis(df):
     """Menganalisis performa pramusaji melampaui total penjualan."""
     st.subheader("👨‍🍳 Analisis Kinerja Pramusaji (Waiter)")
@@ -622,20 +611,17 @@ def create_waiter_performance_analysis(df):
     col1, col2, col3 = st.columns(3)
     top_sales = waiter_perf.nlargest(1, 'TotalSales')
     if not top_sales.empty:
-        # --- PERBAIKAN 1 ---
         sales_value = float(top_sales['TotalSales'].iloc[0])
         col1.metric("Penjualan Tertinggi", top_sales['Waiter'].iloc[0], f"Rp {sales_value:,.0f}")
 
     top_aov = waiter_perf.nlargest(1, 'AOV')
     if not top_aov.empty:
-        # --- PERBAIKAN 2 ---
         aov_value = float(top_aov['AOV'].iloc[0])
         col2.metric("AOV Tertinggi (Upseller)", top_aov['Waiter'].iloc[0], f"Rp {aov_value:,.0f}")
     
     discounter_perf = waiter_perf[waiter_perf['DiscountRate'] > 0]
     top_discounter = discounter_perf.nlargest(1, 'DiscountRate')
     if not top_discounter.empty:
-        # --- PERBAIKAN 3 (Paling Kritis) ---
         discount_rate_value = float(top_discounter['DiscountRate'].iloc[0])
         col3.metric("Rasio Diskon Tertinggi", top_discounter['Waiter'].iloc[0], f"{discount_rate_value:.1%}")
     else:
@@ -649,103 +635,33 @@ def create_waiter_performance_analysis(df):
     """)
     with st.expander("Lihat Data Kinerja Pramusaji Lengkap"):
         st.dataframe(waiter_perf.sort_values('TotalSales', ascending=False), use_container_width=True)
-        
-def old_create_discount_effectiveness_analysis(df):
+
+def create_discount_effectiveness_analysis(df):
     """Menganalisis apakah diskon efektif meningkatkan belanja pelanggan."""
     st.subheader("📉 Analisis Efektivitas Diskon")
     if 'Discount' not in df.columns or 'Bill Discount' not in df.columns:
         st.warning("Kolom 'Discount' dan/atau 'Bill Discount' tidak dipetakan. Analisis ini tidak tersedia.")
         return
-        
-    df_analysis = df.copy()
-    # Pastikan Bill Discount tidak dihitung ganda jika sudah termasuk dalam Nett Sales
-    # Asumsi: Nett Sales = Gross Sales - Discount. Bill Discount adalah tambahan.
-    # Total Sales (Gross) kira-kira = Nett Sales + Discount
-    df_analysis['TotalDiscount'] = df_analysis['Discount'] + df_analysis['Bill Discount']
-    df_analysis['HasDiscount'] = df_analysis['TotalDiscount'] > 0
-    
-    if df_analysis['HasDiscount'].nunique() < 2:
-        st.info("Tidak ada cukup data untuk membandingkan transaksi dengan dan tanpa diskon.")
-        return
-
-    # Aggregate by bill to calculate AOV correctly
-    bill_agg = df_analysis.groupby('Bill Number').agg(
-        NettSales=('Nett Sales', 'sum'),
-        HasDiscount=('HasDiscount', 'max') # If any item in a bill has a discount, the bill has a discount
-    )
-    
-    aov_comparison = bill_agg.groupby('HasDiscount')['NettSales'].mean()
-    
-    if True in aov_comparison.index and False in aov_comparison.index:
-        aov_with_discount = aov_comparison.loc[True]
-        aov_without_discount = aov_comparison.loc[False]
-        
-        col1, col2 = st.columns(2)
-        col1.metric("AOV dengan Diskon", f"Rp {aov_with_discount:,.0f}")
-        col2.metric("AOV tanpa Diskon", f"Rp {aov_without_discount:,.0f}")
-        
-        diff = (aov_with_discount - aov_without_discount) / aov_without_discount
-        if diff > 0.05:
-            st.success(f"✅ **Efektif**: Pemberian diskon secara umum berhasil meningkatkan nilai belanja rata-rata sebesar **{diff:.1%}**.")
-        else:
-            st.warning(f"⚠️ **Potensi Kanibalisasi**: Diskon tidak meningkatkan AOV secara signifikan (perubahan {diff:.1%}). Ada risiko diskon hanya mengurangi profit tanpa mendorong pelanggan untuk belanja lebih banyak.")
-    else:
+    results = calculate_discount_effectiveness(df)
+    if results is None:
         st.info("Tidak ada cukup data untuk membandingkan AOV dengan dan tanpa diskon.")
-
-def create_discount_effectiveness_analysis(df):
-    """
-    Menganalisis apakah diskon efektif meningkatkan belanja pelanggan.
-    Fungsi ini membandingkan Average Order Value (AOV) antara transaksi
-    yang menggunakan diskon dengan yang tidak.
-    """
-    st.subheader("📉 Analisis Efektivitas Diskon")
-
-    # Memastikan kolom yang dibutuhkan tersedia di data
-    if 'Discount' not in df.columns or 'Bill Discount' not in df.columns:
-        st.warning("Kolom 'Discount' dan/atau 'Bill Discount' tidak dipetakan. Analisis ini tidak tersedia.")
         return
-        
-    df_analysis = df.copy()
     
-    # Menghitung total diskon per baris dan menandai transaksi mana yang punya diskon
-    df_analysis['TotalDiscount'] = df_analysis['Discount'] + df_analysis['Bill Discount']
-    df_analysis['HasDiscount'] = df_analysis['TotalDiscount'] > 0
-    
-    # Jika tidak ada variasi (semua transaksi punya diskon atau semua tidak punya), analisis tidak bisa dilanjutkan
-    if df_analysis['HasDiscount'].nunique() < 2:
-        st.info("Tidak ada cukup data untuk membandingkan transaksi dengan dan tanpa diskon.")
-        return
-
-    # Agregasi per nomor struk/bill untuk menghitung AOV dengan benar
-    bill_agg = df_analysis.groupby('Bill Number').agg(
-        NettSales=('Nett Sales', 'sum'),
-        HasDiscount=('HasDiscount', 'max') # Jika satu item saja ada diskon, maka seluruh struk dianggap punya diskon
-    )
-    
-    # Menghitung AOV rata-rata untuk grup 'dengan diskon' dan 'tanpa diskon'
+    aov_lift = results['aov_lift']
+    col1, col2 = st.columns(2)
+    # Untuk menampilkan AOV, kita perlu menghitungnya lagi di sini karena kalkulator hanya mengembalikan perbedaan
+    bill_agg = df.groupby('Bill Number').agg(NettSales=('Nett Sales', 'sum'), HasDiscount=('HasDiscount', 'max'))
     aov_comparison = bill_agg.groupby('HasDiscount')['NettSales'].mean()
+    aov_with_discount = float(aov_comparison.get(True, 0))
+    aov_without_discount = float(aov_comparison.get(False, 0))
+
+    col1.metric("AOV dengan Diskon", f"Rp {aov_with_discount:,.0f}")
+    col2.metric("AOV tanpa Diskon", f"Rp {aov_without_discount:,.0f}")
     
-    # Memeriksa apakah kedua grup ada untuk dibandingkan
-    if True in aov_comparison.index and False in aov_comparison.index:
-        
-        # --- PERBAIKAN UTAMA ---
-        # Mengubah tipe data dari numpy.float64 ke float standar Python untuk menghindari error format
-        aov_with_discount = float(aov_comparison.loc[True])
-        aov_without_discount = float(aov_comparison.loc[False])
-        
-        # Menampilkan perbandingan menggunakan st.metric
-        col1, col2 = st.columns(2)
-        col1.metric("AOV dengan Diskon", f"Rp {aov_with_discount:,.0f}")
-        col2.metric("AOV tanpa Diskon", f"Rp {aov_without_discount:,.0f}")
-        
-        # Memberikan insight otomatis berdasarkan hasil perbandingan
-        diff = (aov_with_discount - aov_without_discount) / aov_without_discount
-        if diff > 0.05: # Jika AOV naik lebih dari 5%, dianggap efektif
-            st.success(f"✅ **Efektif**: Pemberian diskon secara umum berhasil meningkatkan nilai belanja rata-rata sebesar **{diff:.1%}**.")
-        else:
-            st.warning(f"⚠️ **Potensi Kanibalisasi**: Diskon tidak meningkatkan AOV secara signifikan (perubahan {diff:.1%}). Ada risiko diskon hanya mengurangi profit tanpa mendorong pelanggan untuk belanja lebih banyak.")
+    if results['is_effective']:
+        st.success(f"✅ **Efektif**: Pemberian diskon secara umum berhasil meningkatkan nilai belanja rata-rata sebesar **{aov_lift:.1%}**.")
     else:
-        st.info("Tidak ada cukup data untuk membandingkan AOV dengan dan tanpa diskon.")
+        st.warning(f"⚠️ **Potensi Kanibalisasi**: Diskon tidak meningkatkan AOV secara signifikan (perubahan **{aov_lift:.1%}**). Ada risiko diskon hanya mengurangi profit tanpa mendorong pelanggan untuk belanja lebih banyak.")
 
 def create_regional_analysis(df):
     """Menganalisis perbedaan performa dan preferensi antar kota."""
@@ -774,7 +690,6 @@ def create_regional_analysis(df):
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Analisis preferensi menu per kota
     top_cities = city_perf.nlargest(min(3, len(city_perf)), 'TotalSales')['City'].tolist()
     if top_cities:
         st.markdown("**Preferensi Menu Teratas per Kota (Berdasarkan Kuantitas)**")
@@ -796,13 +711,11 @@ def main_app(user_name):
     if 'data_processed' not in st.session_state:
         st.session_state.data_processed = False
 
-    # --- SIDEBAR: Autentikasi dan Unggah File (TETAP SAMA) ---
     if os.path.exists("logo.png"): st.sidebar.image("logo.png", width=150)
     authenticator.logout("Logout", "sidebar")
     st.sidebar.success(f"Login sebagai: **{user_name}**")
     st.sidebar.title("📤 Unggah & Mapping Kolom")
 
-    # ... (Kode untuk upload, mapping, dan tombol proses data tetap sama) ...
     uploaded_file = st.sidebar.file_uploader(
         "1. Unggah Sales Report", type=["xlsx", "xls", "csv"],
         on_change=reset_processing_state
@@ -837,7 +750,6 @@ def main_app(user_name):
         if df_processed is not None:
             st.session_state.df_processed = df_processed
             st.session_state.data_processed = True
-            # Reset state multiselect saat data baru diproses
             if 'multiselect_selected' in st.session_state:
                 del st.session_state.multiselect_selected
             st.rerun()
@@ -845,10 +757,8 @@ def main_app(user_name):
     if st.session_state.data_processed:
         df_processed = st.session_state.df_processed
         
-        # --- SIDEBAR: Filter Global ---
         st.sidebar.title("⚙️ Filter Global")
         
-        # Menggunakan filter selectbox tunggal sementara
         ALL_BRANCHES_OPTION = "Semua Cabang (Gabungan)"
         unique_branches = sorted(df_processed['Branch'].unique())
         branch_options = [ALL_BRANCHES_OPTION] + unique_branches
@@ -877,13 +787,21 @@ def main_app(user_name):
         channel_results = calculate_channel_analysis(df_filtered)
         menu_results = calculate_menu_engineering(df_filtered)
         ops_results = calculate_operational_efficiency(df_filtered)
+        # --- MODIFIKASI: Panggil fungsi kalkulator baru ---
+        waiter_results = calculate_waiter_performance(df_filtered.copy())
+        discount_results = calculate_discount_effectiveness(df_filtered.copy())
+        regional_results = calculate_regional_performance(df_filtered.copy())
         
         # --- TAMPILKAN RINGKASAN EKSEKUTIF ---
         if monthly_agg is not None and len(monthly_agg) >= 3:
-            summary = generate_executive_summary(monthly_agg, channel_results, menu_results, ops_results)
+            # --- MODIFIKASI: Kirim hasil baru ke summary ---
+            summary = generate_executive_summary(
+                monthly_agg, channel_results, menu_results, ops_results,
+                waiter_results, discount_results, regional_results
+            )
             display_executive_summary(summary)
 
-        # --- Menambahkan tab ketiga "Analisis Strategis" ---
+        # --- Tampilan Tab ---
         trend_tab, ops_tab, strategic_tab = st.tabs([
             "📈 **Dashboard Tren Performa**", 
             "🚀 **Dashboard Analisis Operasional**",
@@ -908,7 +826,6 @@ def main_app(user_name):
             st.markdown("---")
             display_operational_efficiency(ops_results)
 
-        # --- Mengisi tab baru dengan fungsi analisis strategis ---
         with strategic_tab:
             st.header("Sintesis dan Analisis Silang")
             create_waiter_performance_analysis(df_filtered.copy())
@@ -921,7 +838,12 @@ def main_app(user_name):
 # LOGIKA AUTENTIKASI
 # ==============================================================================
 try:
+    # Ganti dengan path ke file config.yaml Anda jika menggunakan file
+    # with open('config.yaml') as file:
+    #     config = yaml.load(file, Loader=SafeLoader)
+    # ATAU gunakan st.secrets
     config = {'credentials': st.secrets['credentials'].to_dict(), 'cookie': st.secrets['cookie'].to_dict()}
+
     authenticator = stauth.Authenticate(
         config['credentials'],
         config['cookie']['name'],
