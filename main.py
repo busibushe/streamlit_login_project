@@ -1,3 +1,4 @@
+# backup sama kayak Atas
 import os
 import streamlit as st
 import streamlit_authenticator as stauth
@@ -241,41 +242,6 @@ def calculate_operational_efficiency(df):
             'p_value': p_value
         }
     }
-def calculate_discount_effectiveness(df):
-    """
-    Menghitung efektivitas diskon dan mengembalikan hasilnya dalam bentuk dictionary.
-    Fungsi ini tidak menampilkan apapun di UI.
-    """
-    if 'Discount' not in df.columns or 'Bill Discount' not in df.columns:
-        return None
-        
-    df_analysis = df.copy()
-    df_analysis['TotalDiscount'] = df_analysis['Discount'] + df_analysis['Bill Discount']
-    df_analysis['HasDiscount'] = df_analysis['TotalDiscount'] > 0
-    
-    if df_analysis['HasDiscount'].nunique() < 2:
-        return None
-        
-    bill_agg = df_analysis.groupby('Bill Number').agg(
-        NettSales=('Nett Sales', 'sum'),
-        HasDiscount=('HasDiscount', 'max')
-    )
-    
-    aov_comparison = bill_agg.groupby('HasDiscount')['NettSales'].mean()
-    
-    if True in aov_comparison.index and False in aov_comparison.index:
-        aov_with_discount = float(aov_comparison.loc[True])
-        aov_without_discount = float(aov_comparison.loc[False])
-        
-        # Hindari pembagian dengan nol jika AOV tanpa diskon adalah 0
-        if aov_without_discount > 0:
-            diff = (aov_with_discount - aov_without_discount) / aov_without_discount
-        else:
-            diff = float('inf') # Anggap tak terhingga jika AOV awal adalah 0
-
-        return {'is_effective': diff > 0.05, 'aov_lift': diff}
-        
-    return None
 def generate_executive_summary(monthly_agg, channel_results, menu_results, ops_results):
     """Menciptakan ringkasan eksekutif otomatis berdasarkan hasil analisis yang sudah dihitung."""
     analyses = {'Penjualan': analyze_trend_v3(monthly_agg, 'TotalMonthlySales', 'Penjualan'),'Transaksi': analyze_trend_v3(monthly_agg, 'TotalTransactions', 'Transaksi'),'AOV': analyze_trend_v3(monthly_agg, 'AOV', 'AOV')}
@@ -585,7 +551,7 @@ def create_waiter_performance_analysis(df):
     """)
     with st.expander("Lihat Data Kinerja Pramusaji Lengkap"):
         st.dataframe(waiter_perf.sort_values('TotalSales', ascending=False), use_container_width=True)
-def old_create_discount_effectiveness_analysis(df):
+def create_discount_effectiveness_analysis(df):
     """
     Menganalisis apakah diskon efektif meningkatkan belanja pelanggan.
     Fungsi ini membandingkan Average Order Value (AOV) antara transaksi
@@ -639,57 +605,6 @@ def old_create_discount_effectiveness_analysis(df):
             st.warning(f"⚠️ **Potensi Kanibalisasi**: Diskon tidak meningkatkan AOV secara signifikan (perubahan {diff:.1%}). Ada risiko diskon hanya mengurangi profit tanpa mendorong pelanggan untuk belanja lebih banyak.")
     else:
         st.info("Tidak ada cukup data untuk membandingkan AOV dengan dan tanpa diskon.")
-def create_discount_effectiveness_analysis(df):
-    """
-    Menganalisis apakah diskon efektif meningkatkan belanja pelanggan.
-    Fungsi ini menampilkan metrik dan insight di UI.
-    """
-    st.subheader("📉 Analisis Efektivitas Diskon")
-
-    # Memastikan kolom yang dibutuhkan tersedia di data
-    if 'Discount' not in df.columns or 'Bill Discount' not in df.columns:
-        st.warning("Kolom 'Discount' dan/atau 'Bill Discount' tidak dipetakan. Analisis ini tidak tersedia.")
-        return
-        
-    # Memanggil fungsi kalkulator untuk mendapatkan hasil analisis
-    results = calculate_discount_effectiveness(df)
-    
-    # Jika tidak ada cukup data, tampilkan info dan hentikan fungsi
-    if results is None:
-        st.info("Tidak ada cukup data untuk membandingkan AOV dengan dan tanpa diskon.")
-        return
-    
-    # --- MULAI PERBAIKAN ---
-    # Buat DataFrame copy untuk diolah agar tidak mengubah data asli
-    df_analysis = df.copy()
-    
-    # Buat kolom 'TotalDiscount' dan 'HasDiscount' yang dibutuhkan untuk agregasi
-    df_analysis['TotalDiscount'] = df_analysis['Discount'] + df_analysis['Bill Discount']
-    df_analysis['HasDiscount'] = df_analysis['TotalDiscount'] > 0
-    
-    # Agregasi per nomor struk untuk mendapatkan AOV dengan benar
-    bill_agg = df_analysis.groupby('Bill Number').agg(
-        NettSales=('Nett Sales', 'sum'),
-        HasDiscount=('HasDiscount', 'max') 
-    )
-    aov_comparison = bill_agg.groupby('HasDiscount')['NettSales'].mean()
-    
-    # Ambil nilai AOV untuk ditampilkan
-    aov_with_discount = float(aov_comparison.get(True, 0))
-    aov_without_discount = float(aov_comparison.get(False, 0))
-    # --- SELESAI PERBAIKAN ---
-
-    # Tampilkan metrik di UI
-    col1, col2 = st.columns(2)
-    col1.metric("AOV dengan Diskon", f"Rp {aov_with_discount:,.0f}")
-    col2.metric("AOV tanpa Diskon", f"Rp {aov_without_discount:,.0f}")
-    
-    # Tampilkan insight (kesimpulan) otomatis
-    aov_lift = results['aov_lift']
-    if results['is_effective']:
-        st.success(f"✅ **Efektif**: Pemberian diskon secara umum berhasil meningkatkan nilai belanja rata-rata sebesar **{aov_lift:.1%}**.")
-    else:
-        st.warning(f"⚠️ **Potensi Kanibalisasi**: Diskon tidak meningkatkan AOV secara signifikan (perubahan **{aov_lift:.1%}**). Ada risiko diskon hanya mengurangi profit.")
 def create_regional_analysis(df):
     """Menganalisis perbedaan performa dan preferensi antar kota."""
     st.subheader("🏙️ Analisis Kinerja Regional")
