@@ -39,88 +39,19 @@ OPTIONAL_COLS_MAP = {
 }
 
 # ==============================================================================
-# FUNGSI-FUNGSI PEMROSESAN & UI HELPER
+# FUNGSI PEMUATAN DATA
 # ==============================================================================
-# --- PERUBAHAN 1: Memodifikasi fungsi untuk menangani beberapa file ---
 @st.cache_data
-def old_load_and_combine_files(uploaded_files):
-    """
-    Memuat, melewati baris yang tidak perlu, dan menggabungkan beberapa file
-    Excel atau CSV menjadi satu DataFrame.
-    """
-    all_data = []
-    # --- Tambahkan input untuk jumlah baris yang akan dilewati ---
-    rows_to_skip = 11 
-
-    for file in uploaded_files:
-        try:
-            if file.name.endswith('.csv'):
-                # Untuk CSV, kita juga menggunakan skiprows
-                df = pd.read_csv(file, skiprows=rows_to_skip, low_memory=False)
-            else:
-                # Untuk Excel, gunakan parameter skiprows
-                df = pd.read_excel(file, skiprows=rows_to_skip)
-            
-            all_data.append(df)
-        except Exception as e:
-            st.warning(f"Gagal memuat atau memproses file '{file.name}': {e}")
-            continue # Lanjutkan ke file berikutnya jika ada error
-
-    if not all_data:
-        st.error("Tidak ada file yang berhasil diproses. Periksa format file Anda.")
+def load_feather_file(uploaded_file):
+    """Memuat satu file Feather yang sudah digabungkan."""
+    if uploaded_file is None:
         return None
-    
-    # Menggabungkan semua DataFrame menjadi satu
-    combined_df = pd.concat(all_data, ignore_index=True)
-    return combined_df
-
-def load_and_combine_files(uploaded_files):
-    """
-    Memuat, melewati baris, dan menggabungkan beberapa file dengan optimisasi
-    dan feedback proses untuk pengguna.
-    """
-    data_list = []
-    rows_to_skip = 11
-
-    # --- OPTIMISASI 1: Tambahkan progress bar untuk feedback ---
-    progress_bar = st.progress(0, text="Mempersiapkan untuk memuat file...")
-    total_files = len(uploaded_files)
-
-    for i, file in enumerate(uploaded_files):
-        # Update teks progress bar
-        progress_text = f"Memuat file {i + 1}/{total_files}: {file.name}"
-        progress_bar.progress((i + 1) / total_files, text=progress_text)
-        
-        try:
-            if file.name.endswith('.csv'):
-                df = pd.read_csv(file, skiprows=rows_to_skip, low_memory=False)
-            else:
-                # --- OPTIMISASI 2: Gunakan engine yang lebih stabil ---
-                # Menggunakan 'openpyxl' secara eksplisit.
-                df = pd.read_excel(file, skiprows=rows_to_skip, engine='openpyxl')
-            
-            data_list.append(df)
-        except Exception as e:
-            st.warning(f"Gagal memuat atau memproses file '{file.name}': {e}")
-            continue
-
-    if not data_list:
-        st.error("Tidak ada file yang berhasil diproses. Periksa format file Anda.")
-        progress_bar.empty() # Hapus progress bar jika gagal
+    try:
+        df = pd.read_feather(uploaded_file)
+        return df
+    except Exception as e:
+        st.error(f"Gagal memuat file Feather: {e}")
         return None
-    
-    progress_bar.progress(1.0, text="Semua file dimuat. Menggabungkan data...")
-
-    # Gabungkan semua DataFrame
-    combined_df = pd.concat(data_list, ignore_index=True)
-
-    # --- OPTIMISASI 3: Manajemen memori eksplisit ---
-    # Hapus daftar awal untuk membebaskan RAM sesegera mungkin.
-    del data_list
-    
-    progress_bar.empty() # Hapus progress bar setelah selesai
-    
-    return combined_df
 
 def find_best_column_match(all_columns, internal_name, description):
     """Mencari nama kolom yang paling cocok dari daftar berdasarkan nama internal dan deskripsi."""
@@ -179,7 +110,6 @@ def reset_processing_state():
     for key in list(st.session_state.keys()):
         if key.startswith("map_") or key == 'multiselect_selected':
             del st.session_state[key]
-
             
 def create_all_inclusive_multiselect(df, column_name):
     """Membuat widget st.multiselect yang menyertakan opsi "(All)"."""
