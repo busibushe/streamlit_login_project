@@ -43,7 +43,7 @@ OPTIONAL_COLS_MAP = {
 # ==============================================================================
 # --- PERUBAHAN 1: Memodifikasi fungsi untuk menangani beberapa file ---
 @st.cache_data
-def load_and_combine_files(uploaded_files):
+def old_load_and_combine_files(uploaded_files):
     """
     Memuat, melewati baris yang tidak perlu, dan menggabungkan beberapa file
     Excel atau CSV menjadi satu DataFrame.
@@ -72,6 +72,54 @@ def load_and_combine_files(uploaded_files):
     
     # Menggabungkan semua DataFrame menjadi satu
     combined_df = pd.concat(all_data, ignore_index=True)
+    return combined_df
+
+def load_and_combine_files(uploaded_files):
+    """
+    Memuat, melewati baris, dan menggabungkan beberapa file dengan optimisasi
+    dan feedback proses untuk pengguna.
+    """
+    data_list = []
+    rows_to_skip = 11
+
+    # --- OPTIMISASI 1: Tambahkan progress bar untuk feedback ---
+    progress_bar = st.progress(0, text="Mempersiapkan untuk memuat file...")
+    total_files = len(uploaded_files)
+
+    for i, file in enumerate(uploaded_files):
+        # Update teks progress bar
+        progress_text = f"Memuat file {i + 1}/{total_files}: {file.name}"
+        progress_bar.progress((i + 1) / total_files, text=progress_text)
+        
+        try:
+            if file.name.endswith('.csv'):
+                df = pd.read_csv(file, skiprows=rows_to_skip, low_memory=False)
+            else:
+                # --- OPTIMISASI 2: Gunakan engine yang lebih stabil ---
+                # Menggunakan 'openpyxl' secara eksplisit.
+                df = pd.read_excel(file, skiprows=rows_to_skip, engine='openpyxl')
+            
+            data_list.append(df)
+        except Exception as e:
+            st.warning(f"Gagal memuat atau memproses file '{file.name}': {e}")
+            continue
+
+    if not data_list:
+        st.error("Tidak ada file yang berhasil diproses. Periksa format file Anda.")
+        progress_bar.empty() # Hapus progress bar jika gagal
+        return None
+    
+    progress_bar.progress(1.0, text="Semua file dimuat. Menggabungkan data...")
+
+    # Gabungkan semua DataFrame
+    combined_df = pd.concat(data_list, ignore_index=True)
+
+    # --- OPTIMISASI 3: Manajemen memori eksplisit ---
+    # Hapus daftar awal untuk membebaskan RAM sesegera mungkin.
+    del data_list
+    
+    progress_bar.empty() # Hapus progress bar setelah selesai
+    
     return combined_df
 
 def find_best_column_match(all_columns, internal_name, description):
