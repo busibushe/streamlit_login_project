@@ -646,30 +646,23 @@ def create_regional_analysis(df):
 # APLIKASI UTAMA STREAMLIT
 # ==============================================================================
 def main_app(user_name):
-    """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
-    if 'data_processed' not in st.session_state:
-        st.session_state.data_processed = False
-
-    # --- SIDEBAR: Autentikasi dan Unggah File ---
-    if os.path.exists("logo.png"): st.sidebar.image("logo.png", width=150)
-    # authenticator.logout("Logout", "sidebar") # Nonaktifkan untuk development jika perlu
-    st.sidebar.success(f"Login sebagai: **{user_name}**")
+    # ... (kode otentikasi seperti biasa) ...
     st.sidebar.title("📤 Unggah & Mapping Kolom")
 
-    # --- PERUBAHAN 2: Izinkan unggah beberapa file ---
-    uploaded_files = st.sidebar.file_uploader(
-        "1. Unggah Sales Report (bisa lebih dari satu)", 
-        type=["xlsx", "xls", "csv"],
-        accept_multiple_files=True,  # Parameter kunci untuk multi-upload
+    # --- UBAH BAGIAN INI: HANYA UPLOAD SATU FILE ---
+    uploaded_file = st.sidebar.file_uploader(
+        "1. Unggah Database Lengkap (.feather)", 
+        type=["feather"],
+        accept_multiple_files=False, # Diubah menjadi False
         on_change=reset_processing_state
     )
     
-    if not uploaded_files:
-        st.info("👋 Selamat datang! Silakan unggah satu atau lebih file data penjualan Anda untuk memulai analisis.")
+    if uploaded_file is None:
+        st.info("👋 Selamat datang! Silakan unggah file 'database_lengkap.feather' Anda.")
         st.stop()
         
-    # --- PERUBAHAN 3: Gunakan fungsi baru untuk memuat dan menggabungkan data ---
-    df_raw = load_and_combine_files(uploaded_files)
+    # Gunakan fungsi pemuatan yang baru dan sederhana
+    df_raw = load_feather_file(uploaded_file)
     if df_raw is None: 
         st.stop()
 
