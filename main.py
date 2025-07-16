@@ -1,4 +1,3 @@
-# backup sama kayak Atas
 import os
 import streamlit as st
 import streamlit_authenticator as stauth
@@ -27,7 +26,6 @@ REQUIRED_COLS_MAP = {
     'Menu': 'Nama Item/Menu',
     'Qty': 'Kuantitas'
 }
-# --- PERUBAHAN 1: Menambahkan kolom baru untuk analisis strategis ---
 OPTIONAL_COLS_MAP = {
     'Visit Purpose': 'Saluran Penjualan',
     'Payment Method': 'Metode Pembayaran',
@@ -43,16 +41,38 @@ OPTIONAL_COLS_MAP = {
 # ==============================================================================
 # FUNGSI-FUNGSI PEMROSESAN & UI HELPER
 # ==============================================================================
+# --- PERUBAHAN 1: Memodifikasi fungsi untuk menangani beberapa file ---
 @st.cache_data
-def load_raw_data(file):
-    """Memuat data mentah dari file yang diunggah dengan penanganan error."""
-    try:
-        if file.name.endswith('.csv'):
-            return pd.read_csv(file, low_memory=False)
-        return pd.read_excel(file)
-    except Exception as e:
-        st.error(f"Gagal memuat file: {e}")
+def load_and_combine_files(uploaded_files):
+    """
+    Memuat, melewati baris yang tidak perlu, dan menggabungkan beberapa file
+    Excel atau CSV menjadi satu DataFrame.
+    """
+    all_data = []
+    # --- Tambahkan input untuk jumlah baris yang akan dilewati ---
+    rows_to_skip = 11 
+
+    for file in uploaded_files:
+        try:
+            if file.name.endswith('.csv'):
+                # Untuk CSV, kita juga menggunakan skiprows
+                df = pd.read_csv(file, skiprows=rows_to_skip, low_memory=False)
+            else:
+                # Untuk Excel, gunakan parameter skiprows
+                df = pd.read_excel(file, skiprows=rows_to_skip)
+            
+            all_data.append(df)
+        except Exception as e:
+            st.warning(f"Gagal memuat atau memproses file '{file.name}': {e}")
+            continue # Lanjutkan ke file berikutnya jika ada error
+
+    if not all_data:
+        st.error("Tidak ada file yang berhasil diproses. Periksa format file Anda.")
         return None
+    
+    # Menggabungkan semua DataFrame menjadi satu
+    combined_df = pd.concat(all_data, ignore_index=True)
+    return combined_df
 
 def find_best_column_match(all_columns, internal_name, description):
     """Mencari nama kolom yang paling cocok dari daftar berdasarkan nama internal dan deskripsi."""
@@ -77,7 +97,7 @@ def process_mapped_data(df_raw, user_mapping):
     try:
         df = pd.DataFrame()
         for internal_name, source_col in user_mapping.items():
-            if source_col:
+            if source_col and source_col in df_raw.columns:
                 df[internal_name] = df_raw[source_col]
 
         df['Sales Date'] = pd.to_datetime(df['Sales Date'], errors='coerce')
@@ -96,10 +116,7 @@ def process_mapped_data(df_raw, user_mapping):
              if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
         
-        # --- PERBAIKAN 1: Standarisasi 'Order Time' di sini ---
         if 'Order Time' in df.columns:
-            # Konversi ke string dulu untuk standardisasi, lalu ke datetime.
-            # Jangan gunakan .dt.time agar informasi tanggal tetap ada (meski default).
             df['Order Time'] = pd.to_datetime(df['Order Time'].astype(str), errors='coerce')
 
         df.dropna(subset=['Sales Date'], inplace=True)
@@ -114,6 +131,7 @@ def reset_processing_state():
     for key in list(st.session_state.keys()):
         if key.startswith("map_") or key == 'multiselect_selected':
             del st.session_state[key]
+
             
 def create_all_inclusive_multiselect(df, column_name):
     """Membuat widget st.multiselect yang menyertakan opsi "(All)"."""
@@ -645,7 +663,7 @@ def create_regional_analysis(df):
                     st.caption("Tidak ada data menu.")
                 for menu in top_menus:
                     st.caption(f"- {menu}")
-                    
+
 # ==============================================================================
 # APLIKASI UTAMA STREAMLIT
 # ==============================================================================
@@ -654,22 +672,29 @@ def main_app(user_name):
     if 'data_processed' not in st.session_state:
         st.session_state.data_processed = False
 
-    # --- SIDEBAR: Autentikasi dan Unggah File (TETAP SAMA) ---
+    # --- SIDEBAR: Autentikasi dan Unggah File ---
     if os.path.exists("logo.png"): st.sidebar.image("logo.png", width=150)
-    authenticator.logout("Logout", "sidebar")
+    # authenticator.logout("Logout", "sidebar") # Nonaktifkan untuk development jika perlu
     st.sidebar.success(f"Login sebagai: **{user_name}**")
     st.sidebar.title("📤 Unggah & Mapping Kolom")
 
-    # ... (Kode untuk upload, mapping, dan tombol proses data tetap sama) ...
-    uploaded_file = st.sidebar.file_uploader(
-        "1. Unggah Sales Report", type=["xlsx", "xls", "csv"],
+    # --- PERUBAHAN 2: Izinkan unggah beberapa file ---
+    uploaded_files = st.sidebar.file_uploader(
+        "1. Unggah Sales Report (bisa lebih dari satu)", 
+        type=["xlsx", "xls", "csv"],
+        accept_multiple_files=True,  # Parameter kunci untuk multi-upload
         on_change=reset_processing_state
     )
-    if uploaded_file is None:
-        st.info("👋 Selamat datang! Silakan unggah file data penjualan Anda untuk memulai analisis.")
+    
+    if not uploaded_files:
+        st.info("👋 Selamat datang! Silakan unggah satu atau lebih file data penjualan Anda untuk memulai analisis.")
         st.stop()
-    df_raw = load_raw_data(uploaded_file)
-    if df_raw is None: st.stop()
+        
+    # --- PERUBAHAN 3: Gunakan fungsi baru untuk memuat dan menggabungkan data ---
+    df_raw = load_and_combine_files(uploaded_files)
+    if df_raw is None: 
+        st.stop()
+
     user_mapping = {}
     all_cols = [""] + df_raw.columns.tolist()
     with st.sidebar.expander("Atur Kolom Wajib", expanded=not st.session_state.data_processed):
@@ -684,6 +709,7 @@ def main_app(user_name):
             index = all_cols.index(best_guess) if best_guess else 0
             key = f"map_opt_{internal_name}"
             user_mapping[internal_name] = st.selectbox(f"**{desc}**:", options=all_cols, index=index, key=key)
+
     if st.sidebar.button("✅ Terapkan dan Proses Data", type="primary"):
         mapped_req_cols = [user_mapping.get(k) for k in REQUIRED_COLS_MAP.keys()]
         if not all(mapped_req_cols):
@@ -691,14 +717,15 @@ def main_app(user_name):
         chosen_cols = [c for c in user_mapping.values() if c]
         if len(chosen_cols) != len(set(chosen_cols)):
             st.error("❌ Terdeteksi satu kolom dipilih untuk beberapa peran berbeda."); st.stop()
-        df_processed = process_mapped_data(df_raw, user_mapping)
-        if df_processed is not None:
-            st.session_state.df_processed = df_processed
-            st.session_state.data_processed = True
-            # Reset state multiselect saat data baru diproses
-            if 'multiselect_selected' in st.session_state:
-                del st.session_state.multiselect_selected
-            st.rerun()
+        
+        with st.spinner("Memproses data... Ini mungkin memakan waktu beberapa saat."):
+            df_processed = process_mapped_data(df_raw, user_mapping)
+            if df_processed is not None:
+                st.session_state.df_processed = df_processed
+                st.session_state.data_processed = True
+                if 'multiselect_selected' in st.session_state:
+                    del st.session_state.multiselect_selected
+                st.rerun()
 
     if st.session_state.data_processed:
         df_processed = st.session_state.df_processed
