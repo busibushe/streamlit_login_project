@@ -69,7 +69,7 @@ def find_best_column_match(all_columns, internal_name, description):
                 return col
     return None
 
-def process_mapped_data(df_raw, user_mapping):
+def old_process_mapped_data(df_raw, user_mapping):
     """
     Memproses DataFrame mentah setelah pemetaan kolom.
     """
@@ -104,6 +104,54 @@ def process_mapped_data(df_raw, user_mapping):
         st.error(f"Terjadi kesalahan saat memproses data: {e}")
         return None
 
+def process_mapped_data(df_raw, user_mapping):
+    """
+    Memproses DataFrame mentah setelah pemetaan kolom, dengan penanganan
+    khusus untuk tipe data 'category'.
+    """
+    try:
+        df = pd.DataFrame()
+        # Salin kolom yang relevan dari data mentah
+        for internal_name, source_col in user_mapping.items():
+            if source_col and source_col in df_raw.columns:
+                df[internal_name] = df_raw[source_col]
+
+        # --- Konversi Tipe Data Numerik dan Tanggal (Tetap Sama) ---
+        df['Sales Date'] = pd.to_datetime(df['Sales Date'], errors='coerce')
+        
+        numeric_cols = ['Qty', 'Nett Sales', 'Discount', 'Bill Discount']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        
+        for col in ['Sales Date In', 'Sales Date Out', 'Order Time']:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
+
+        # --- PERBAIKAN UTAMA: Penanganan Kolom String & Kategori ---
+        string_cols = ['Menu', 'Branch', 'Visit Purpose', 'Payment Method', 'Waiter', 'City']
+        for col in string_cols:
+            if col in df.columns:
+                # Cek apakah kolom ini bertipe 'category' dari hasil optimisasi
+                if pd.api.types.is_categorical_dtype(df[col]):
+                    # Jika 'N/A' belum menjadi kategori yang valid, tambahkan.
+                    if 'N/A' not in df[col].cat.categories:
+                        df[col] = df[col].cat.add_categories(['N/A'])
+                    
+                    # Sekarang aman untuk mengisi nilai kosong dengan 'N/A'
+                    df[col] = df[col].fillna('N/A')
+                else:
+                    # Jika bukan kategori, gunakan metode lama (ubah ke string)
+                    df[col] = df[col].fillna('N/A').astype(str)
+
+        # Hapus baris di mana tanggal transaksi tidak valid
+        df.dropna(subset=['Sales Date'], inplace=True)
+        return df
+        
+    except Exception as e:
+        st.error(f"Terjadi kesalahan saat memproses data: {e}")
+        return None
+        
 def reset_processing_state():
     """Callback untuk mereset state jika file diubah."""
     st.session_state.data_processed = False
