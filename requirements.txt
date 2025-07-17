@@ -4,4 +4,6 @@ pandas
 plotly
 numpy
 scipy
+scikit-learn
 openpyxl
+pyarrow
