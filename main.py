@@ -7,6 +7,7 @@ import numpy as np
 import scipy.stats as stats
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
+from sklearn.cluster import KMeans
 
 # ==============================================================================
 # KONFIGURASI APLIKASI
@@ -365,7 +366,99 @@ def generate_executive_summary(monthly_agg, channel_results, menu_results, ops_r
             peak_hour = ops_results['agg_by_hour'].loc[ops_results['agg_by_hour']['TotalTransactions'].idxmax()]['Hour']
             recommendations.append(f"⏱️ **Atasi Kepadatan:** Layanan melambat saat ramai (terbukti statistik). Tambah sumber daya pada jam puncak sekitar pukul **{int(peak_hour)}:00**.")
     return {"health_status": health_status, "health_color": health_color, "yoy_change": yoy_change_value,"trend_narrative": analyses['Penjualan'].get('narrative', 'Gagal menganalisis tren penjualan.'),"health_context_narrative": health_context_narrative, "score_details": score_details,"recommendations": recommendations, "next_focus": "Pantau dampak eksekusi rekomendasi pada AOV, Transaksi, dan Kecepatan Layanan."}
+def calculate_price_group_analysis(df):
+    """
+    Menganalisis performa berdasarkan kelompok harga yang ditemukan
+    secara otomatis menggunakan K-Means clustering.
+    """
+    if 'Menu' not in df.columns or 'Nett Sales' not in df.columns or 'Qty' not in df.columns:
+        return None
 
+    # 1. Hitung harga rata-rata per item menu
+    menu_prices = df.groupby('Menu').agg(
+        TotalSales=('Nett Sales', 'sum'),
+        TotalQty=('Qty', 'sum')
+    ).reset_index()
+    
+    # Hindari pembagian dengan nol
+    menu_prices = menu_prices[menu_prices['TotalQty'] > 0]
+    menu_prices['AvgPrice'] = menu_prices['TotalSales'] / menu_prices['TotalQty']
+    
+    # Analisis memerlukan setidaknya 4 menu yang berbeda
+    if len(menu_prices) < 4:
+        return None
+
+    # 2. Lakukan K-Means Clustering untuk menemukan 4 kelompok harga
+    # Menggunakan K-Means untuk mengelompokkan harga ke dalam 4 cluster
+    kmeans = KMeans(n_clusters=4, random_state=42, n_init=10)
+    menu_prices['PriceGroupLabel'] = kmeans.fit_predict(menu_prices[['AvgPrice']])
+
+    # 3. Buat label yang deskriptif untuk setiap kelompok
+    # Cari harga rata-rata dari setiap cluster untuk menentuk urutannya
+    cluster_centers = menu_prices.groupby('PriceGroupLabel')['AvgPrice'].mean().sort_values().index
+    # Buat pemetaan dari label cluster (e.g., 3) ke nama yang mudah dibaca (e.g., 'Kelompok 1 (Termurah)')
+    label_mapping = {center: f"Kelompok {i+1}" for i, center in enumerate(cluster_centers)}
+    menu_prices['PriceGroup'] = menu_prices['PriceGroupLabel'].map(label_mapping)
+    
+    # Tambahkan nama urutan deskriptif
+    price_order = [" (Termurah)", " (Menengah)", " (Mahal)", " (Termahal)"]
+    sorted_groups = menu_prices.groupby('PriceGroup')['AvgPrice'].mean().sort_values().index
+    final_label_map = {group: group + price_order[i] for i, group in enumerate(sorted_groups)}
+    menu_prices['PriceGroup'] = menu_prices['PriceGroup'].map(final_label_map)
+
+    # 4. Gabungkan informasi kelompok harga kembali ke data transaksi utama
+    df_with_groups = pd.merge(df, menu_prices[['Menu', 'PriceGroup']], on='Menu', how='left')
+
+    # 5. Agregasi hasil berdasarkan kelompok harga
+    group_performance = df_with_groups.groupby('PriceGroup').agg(
+        TotalSales=('Nett Sales', 'sum'),
+        TotalQty=('Qty', 'sum')
+    ).reset_index()
+    
+    # Urutkan berdasarkan urutan kelompok harga
+    group_performance['sort_order'] = group_performance['PriceGroup'].str.extract('(\d+)').astype(int)
+    group_performance = group_performance.sort_values('sort_order').drop(columns='sort_order')
+
+    return group_performance
+
+def display_price_group_analysis(analysis_results):
+    """
+    Menampilkan visualisasi dan insight untuk analisis kelompok harga.
+    """
+    st.subheader("📊 Analisis Kelompok Harga")
+    if analysis_results is None or analysis_results.empty:
+        st.warning("Data tidak cukup untuk melakukan analisis kelompok harga (diperlukan minimal 4 menu berbeda).")
+        return
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # Bar chart untuk Total Penjualan
+    fig.add_trace(
+        go.Bar(x=analysis_results['PriceGroup'], y=analysis_results['TotalSales'], name='Total Penjualan', marker_color='royalblue'),
+        secondary_y=False,
+    )
+
+    # Line chart untuk Total Kuantitas Terjual
+    fig.add_trace(
+        go.Scatter(x=analysis_results['PriceGroup'], y=analysis_results['TotalQty'], name='Total Kuantitas', mode='lines+markers', line=dict(color='darkorange')),
+        secondary_y=True,
+    )
+
+    fig.update_layout(
+        title_text="Kontribusi Penjualan vs. Kuantitas per Kelompok Harga",
+        xaxis_title="Kelompok Harga",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    fig.update_yaxes(title_text="<b>Total Penjualan (Rp)</b>", secondary_y=False)
+    fig.update_yaxes(title_text="<b>Total Kuantitas Terjual</b>", secondary_y=True)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    st.info("""
+    **Cara Membaca Grafik Ini:**
+    - **Bilah Biru (Penjualan):** Menunjukkan seberapa besar pendapatan yang dihasilkan oleh setiap kelompok harga.
+    - **Garis Oranye (Kuantitas):** Menunjukkan seberapa populer atau sering produk dalam kelompok harga tersebut terjual.
+    - **Insight Kunci:** Cari ketidaksesuaian. Contoh: Kelompok harga dengan penjualan tinggi tapi kuantitas rendah menandakan produk *high-margin*. Sebaliknya, kuantitas tinggi tapi penjualan rendah menandakan produk *volume-driver* yang mungkin bisa dioptimalkan harganya.
+    """)
 def display_executive_summary(summary):
     """Menampilkan ringkasan eksekutif dengan layout baris tunggal yang jernih."""
     def format_score_with_arrows(score):
@@ -709,7 +802,7 @@ def create_regional_analysis(df):
 # ==============================================================================
 # APLIKASI UTAMA STREAMLIT
 # ==============================================================================
-def main_app(user_name):
+def old_main_app(user_name):
     # ... (kode otentikasi seperti biasa) ...
     st.sidebar.title("📤 Unggah & Mapping Kolom")
 
@@ -836,7 +929,176 @@ def main_app(user_name):
             create_discount_effectiveness_analysis(df_filtered.copy())
             st.markdown("---")
             create_regional_analysis(df_filtered.copy())
+def main_app(user_name):
+    """
+    Fungsi utama yang menjalankan seluruh aplikasi dashboard,
+    dari unggah file hingga menampilkan semua analisis.
+    """
+    # Inisialisasi session state untuk status pemrosesan data
+    if 'data_processed' not in st.session_state:
+        st.session_state.data_processed = False
 
+    # ==========================================================================
+    # SIDEBAR: Autentikasi dan Unggah File
+    # ==========================================================================
+    if os.path.exists("logo.png"): 
+        st.sidebar.image("logo.png", width=150)
+    
+    authenticator.logout("Logout", "sidebar")
+    st.sidebar.success(f"Login sebagai: **{user_name}**")
+    st.sidebar.title("📤 Unggah & Mapping Kolom")
+
+    # Widget untuk mengunggah satu file Feather yang sudah diproses
+    uploaded_file = st.sidebar.file_uploader(
+        "1. Unggah Database Lengkap (.feather)", 
+        type=["feather"],
+        accept_multiple_files=False,
+        on_change=reset_processing_state
+    )
+    
+    if uploaded_file is None:
+        st.info("👋 Selamat datang! Silakan unggah file 'database_lengkap.feather' Anda.")
+        st.stop()
+        
+    # Memuat data dari file Feather
+    df_raw = load_feather_file(uploaded_file)
+    if df_raw is None: 
+        st.stop()
+
+    # ==========================================================================
+    # SIDEBAR: Pemetaan Kolom
+    # ==========================================================================
+    user_mapping = {}
+    all_cols = [""] + df_raw.columns.tolist()
+    
+    with st.sidebar.expander("Atur Kolom Wajib", expanded=not st.session_state.data_processed):
+        for internal_name, desc in REQUIRED_COLS_MAP.items():
+            best_guess = find_best_column_match(all_cols, internal_name, desc)
+            index = all_cols.index(best_guess) if best_guess else 0
+            key = f"map_req_{internal_name}"
+            user_mapping[internal_name] = st.selectbox(f"**{desc}**:", options=all_cols, index=index, key=key)
+            
+    with st.sidebar.expander("Atur Kolom Opsional"):
+        for internal_name, desc in OPTIONAL_COLS_MAP.items():
+            best_guess = find_best_column_match(all_cols, internal_name, desc)
+            index = all_cols.index(best_guess) if best_guess else 0
+            key = f"map_opt_{internal_name}"
+            user_mapping[internal_name] = st.selectbox(f"**{desc}**:", options=all_cols, index=index, key=key)
+
+    # Tombol untuk memproses data setelah pemetaan
+    if st.sidebar.button("✅ Terapkan dan Proses Data", type="primary"):
+        mapped_req_cols = [user_mapping.get(k) for k in REQUIRED_COLS_MAP.keys()]
+        if not all(mapped_req_cols):
+            st.error("❌ Harap petakan semua kolom WAJIB diisi."); st.stop()
+        
+        chosen_cols = [c for c in user_mapping.values() if c]
+        if len(chosen_cols) != len(set(chosen_cols)):
+            st.error("❌ Terdeteksi satu kolom dipilih untuk beberapa peran berbeda."); st.stop()
+        
+        with st.spinner("Memproses data..."):
+            df_processed = process_mapped_data(df_raw, user_mapping)
+            if df_processed is not None:
+                st.session_state.df_processed = df_processed
+                st.session_state.data_processed = True
+                if 'multiselect_selected' in st.session_state:
+                    del st.session_state.multiselect_selected
+                st.rerun()
+
+    # ==========================================================================
+    # KONTEN UTAMA: Tampil setelah data berhasil diproses
+    # ==========================================================================
+    if st.session_state.data_processed:
+        df_processed = st.session_state.df_processed
+        
+        # --- SIDEBAR: Filter Global ---
+        st.sidebar.title("⚙️ Filter Global")
+        
+        ALL_BRANCHES_OPTION = "Semua Cabang (Gabungan)"
+        unique_branches = sorted(df_processed['Branch'].unique())
+        branch_options = [ALL_BRANCHES_OPTION] + unique_branches
+        selected_branch = st.sidebar.selectbox("Pilih Cabang", branch_options)
+        
+        min_date = df_processed['Sales Date'].min().date()
+        max_date = df_processed['Sales Date'].max().date()
+        date_range = st.sidebar.date_input(
+            "Pilih Rentang Tanggal", 
+            value=(min_date, max_date), 
+            min_value=min_date, 
+            max_value=max_date
+        )
+
+        if len(date_range) != 2: 
+            st.stop()
+        
+        start_date, end_date = date_range
+        
+        # Menerapkan filter ke data yang telah diproses
+        mask_date = (df_processed['Sales Date'].dt.date >= start_date) & \
+                    (df_processed['Sales Date'].dt.date <= end_date)
+        df_filtered_by_date = df_processed[mask_date]
+        
+        if selected_branch == ALL_BRANCHES_OPTION:
+            df_filtered = df_filtered_by_date
+        else:
+            df_filtered = df_filtered_by_date[df_filtered_by_date['Branch'] == selected_branch]
+
+        if df_filtered.empty:
+            st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih."); st.stop()
+        
+        # Judul Dashboard
+        st.title(f"Dashboard Analisis Penjualan: {selected_branch}")
+        st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
+
+        # --- LAKUKAN SEMUA KALKULASI ANALISIS SEKALI SAJA ---
+        with st.spinner("Menjalankan semua analisis..."):
+            monthly_agg = analyze_monthly_trends(df_filtered)
+            channel_results = calculate_channel_analysis(df_filtered)
+            menu_results = calculate_menu_engineering(df_filtered)
+            ops_results = calculate_operational_efficiency(df_filtered)
+            price_group_results = calculate_price_group_analysis(df_filtered)
+        
+        # --- TAMPILKAN RINGKASAN EKSEKUTIF ---
+        if monthly_agg is not None and len(monthly_agg) >= 3:
+            summary = generate_executive_summary(monthly_agg, channel_results, menu_results, ops_results)
+            display_executive_summary(summary)
+
+        # --- TATA LETAK TAB ---
+        trend_tab, ops_tab, strategic_tab = st.tabs([
+            "📈 **Dashboard Tren Performa**", 
+            "🚀 **Dashboard Analisis Operasional**",
+            "🧠 **Analisis Strategis**"
+        ])
+
+        # --- KONTEN TAB 1: TREN PERFORMA ---
+        with trend_tab:
+            st.header("Analisis Tren Performa Jangka Panjang")
+            if monthly_agg is not None and not monthly_agg.empty:
+                display_monthly_kpis(monthly_agg)
+                display_trend_chart_and_analysis(monthly_agg, 'TotalMonthlySales', 'Penjualan', 'royalblue')
+                display_trend_chart_and_analysis(monthly_agg, 'TotalTransactions', 'Transaksi', 'orange')
+                display_trend_chart_and_analysis(monthly_agg, 'AOV', 'AOV', 'green')
+            else:
+                st.warning("Tidak ada data bulanan yang cukup untuk analisis tren pada periode ini.")
+
+        # --- KONTEN TAB 2: ANALISIS OPERASIONAL ---
+        with ops_tab:
+            st.header("Wawasan Operasional dan Taktis")
+            display_channel_analysis(channel_results)
+            st.markdown("---")
+            display_menu_engineering(menu_results)
+            st.markdown("---")
+            display_operational_efficiency(ops_results)
+
+        # --- KONTEN TAB 3: ANALISIS STRATEGIS ---
+        with strategic_tab:
+            st.header("Sintesis dan Analisis Silang")
+            display_price_group_analysis(price_group_results)
+            st.markdown("---")
+            create_waiter_performance_analysis(df_filtered.copy())
+            st.markdown("---")
+            create_discount_effectiveness_analysis(df_filtered.copy())
+            st.markdown("---")
+            create_regional_analysis(df_filtered.copy())
 # ==============================================================================
 # LOGIKA AUTENTIKASI
 # ==============================================================================
