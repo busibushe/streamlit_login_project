@@ -69,41 +69,6 @@ def find_best_column_match(all_columns, internal_name, description):
                 return col
     return None
 
-def old_process_mapped_data(df_raw, user_mapping):
-    """
-    Memproses DataFrame mentah setelah pemetaan kolom.
-    """
-    try:
-        df = pd.DataFrame()
-        for internal_name, source_col in user_mapping.items():
-            if source_col and source_col in df_raw.columns:
-                df[internal_name] = df_raw[source_col]
-
-        df['Sales Date'] = pd.to_datetime(df['Sales Date'], errors='coerce')
-        
-        numeric_cols = ['Qty', 'Nett Sales', 'Discount', 'Bill Discount']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-        string_cols = ['Menu', 'Branch', 'Visit Purpose', 'Payment Method', 'Waiter', 'City']
-        for col in string_cols:
-            if col in df.columns:
-                df[col] = df[col].fillna('N/A').astype(str)
-
-        for col in ['Sales Date In', 'Sales Date Out']:
-             if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors='coerce')
-        
-        if 'Order Time' in df.columns:
-            df['Order Time'] = pd.to_datetime(df['Order Time'].astype(str), errors='coerce')
-
-        df.dropna(subset=['Sales Date'], inplace=True)
-        return df
-    except Exception as e:
-        st.error(f"Terjadi kesalahan saat memproses data: {e}")
-        return None
-
 def process_mapped_data(df_raw, user_mapping):
     """
     Memproses DataFrame mentah setelah pemetaan kolom, dengan penanganan
@@ -151,7 +116,7 @@ def process_mapped_data(df_raw, user_mapping):
     except Exception as e:
         st.error(f"Terjadi kesalahan saat memproses data: {e}")
         return None
-        
+
 def reset_processing_state():
     """Callback untuk mereset state jika file diubah."""
     st.session_state.data_processed = False
@@ -247,7 +212,7 @@ def calculate_menu_engineering(df):
     stars = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] > avg_sales)]
     workhorses = menu_perf[(menu_perf['Qty'] > avg_qty) & (menu_perf['NettSales'] <= avg_sales)]
     return {'data': menu_perf, 'avg_qty': avg_qty, 'avg_sales': avg_sales, 'stars': stars, 'workhorses': workhorses}
-def calculate_operational_efficiency(df):
+def old_calculate_operational_efficiency(df):
     """Menghitung data untuk analisis efisiensi operasional."""
     required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
     if not all(col in df.columns for col in required_cols):
@@ -262,6 +227,57 @@ def calculate_operational_efficiency(df):
 
     # --- PERBAIKAN 2: Ekstrak jam secara langsung dari kolom datetime ---
     # Ini lebih aman dan menghilangkan warning
+    df_eff['Hour'] = df_eff['Order Time'].dt.hour
+    
+    agg_by_hour = df_eff.groupby('Hour').agg(
+        AvgPrepTime=('Prep Time (Seconds)', 'mean'),
+        TotalTransactions=('Bill Number', 'nunique')
+    ).reset_index()
+    
+    correlation, p_value = None, None
+    if len(agg_by_hour) > 2:
+        correlation, p_value = stats.spearmanr(agg_by_hour['TotalTransactions'], agg_by_hour['AvgPrepTime'])
+        
+    return {
+        'data': df_eff,
+        'agg_by_hour': agg_by_hour,
+        'kpis': {
+            'mean': df_eff['Prep Time (Seconds)'].mean(),
+            'min': df_eff['Prep Time (Seconds)'].min(),
+            'max': df_eff['Prep Time (Seconds)'].max()
+        },
+        'stats': {
+            'correlation': correlation,
+            'p_value': p_value
+        }
+    }
+def calculate_operational_efficiency(df):
+    """
+    Menghitung data untuk analisis efisiensi operasional, dengan mengecualikan
+    data di luar jam operasional (09:00 - 21:00).
+    """
+    required_cols = ['Sales Date In', 'Sales Date Out', 'Order Time', 'Bill Number']
+    if not all(col in df.columns for col in required_cols):
+        return None
+        
+    df_eff = df.dropna(subset=['Sales Date In', 'Sales Date Out', 'Order Time']).copy()
+    if df_eff.empty: return None
+
+    # --- PERUBAHAN DI SINI: FILTER DATA BERDASARKAN JAM OPERASIONAL ---
+    # Hanya sertakan data dari jam 9 pagi (>= 9) hingga jam 9 malam (<= 21).
+    df_eff = df_eff[df_eff['Order Time'].dt.hour.between(9, 21)]
+    # ----------------------------------------------------------------
+
+    df_eff['Prep Time (Seconds)'] = (df_eff['Sales Date Out'] - df_eff['Sales Date In']).dt.total_seconds()
+    
+    # Filter outlier waktu persiapan (misal: lebih dari 1 jam)
+    df_eff = df_eff[df_eff['Prep Time (Seconds)'].between(0, 3600)]
+    
+    # Jika setelah difilter data menjadi kosong, hentikan fungsi.
+    if df_eff.empty: 
+        st.warning("Tidak ada data operasional yang valid ditemukan pada jam 09:00 - 21:00.")
+        return None
+
     df_eff['Hour'] = df_eff['Order Time'].dt.hour
     
     agg_by_hour = df_eff.groupby('Hour').agg(
