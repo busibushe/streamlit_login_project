@@ -799,6 +799,60 @@ def create_regional_analysis(df):
                 for menu in top_menus:
                     st.caption(f"- {menu}")
 
+# FUNGSI-FUNGSI UNTUK ANALISIS KUALITAS & KOMPLAIN
+
+def calculate_branch_health(df_sales, df_complaints):
+    """Menghitung metrik kesehatan cabang."""
+    # Agregasi penjualan & transaksi
+    sales_agg = df_sales.groupby('Branch').agg(
+        TotalSales=('Nett Sales', 'sum'),
+        TotalTransactions=('Bill Number', 'nunique')
+    ).reset_index()
+    
+    # Agregasi komplain
+    complaints_agg = df_complaints.groupby('Branch').agg(
+        TotalComplaints=('Branch', 'count'),
+        AvgResolutionTime=('Waktu Penyelesaian (Jam)', 'mean')
+    ).reset_index()
+    
+    # Gabungkan semua metrik
+    df_health = pd.merge(sales_agg, complaints_agg, on='Branch', how='left').fillna(0)
+    
+    # Hitung Rasio Komplain (komplain per 1000 transaksi agar angkanya tidak terlalu kecil)
+    df_health['ComplaintRatio'] = df_health.apply(
+        lambda row: (row['TotalComplaints'] / row['TotalTransactions']) * 1000 if row['TotalTransactions'] > 0 else 0,
+        axis=1
+    )
+    return df_health
+def display_branch_health(df_health):
+    """Menampilkan dashboard kesehatan cabang."""
+    st.subheader("Dashboard Kesehatan Cabang")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        fig1 = px.bar(df_health, x='Branch', y='ComplaintRatio', title="Rasio Komplain per 1000 Transaksi")
+        st.plotly_chart(fig1, use_container_width=True)
+    with col2:
+        fig2 = px.bar(df_health, x='Branch', y='AvgResolutionTime', title="Rata-rata Waktu Penyelesaian Komplain (Jam)")
+        st.plotly_chart(fig2, use_container_width=True)
+        
+    st.info("**Rasio Komplain** yang rendah dan **Waktu Penyelesaian** yang cepat menandakan cabang yang sehat dari sisi kualitas layanan.")
+def display_complaint_analysis(df_complaints):
+    """Menampilkan analisis detail dari data komplain."""
+    st.subheader("Analisis Detail Komplain")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        # Analisis berdasarkan kategori 'kesalahan'
+        kesalahan_agg = df_complaints['kesalahan'].value_counts().reset_index()
+        fig1 = px.pie(kesalahan_agg, names='kesalahan', values='count', title="Proporsi Kategori Kesalahan", hole=0.3)
+        st.plotly_chart(fig1, use_container_width=True)
+
+    with col2:
+        # Analisis berdasarkan 'golongan'
+        golongan_agg = df_complaints['golongan'].value_counts().reset_index()
+        fig2 = px.bar(golongan_agg, x='golongan', y='count', title="Jumlah Komplain per Golongan Prioritas")
+        st.plotly_chart(fig2, use_container_width=True)
 # ==============================================================================
 # APLIKASI UTAMA STREAMLIT
 # ==============================================================================
@@ -929,7 +983,7 @@ def old_main_app(user_name):
             create_discount_effectiveness_analysis(df_filtered.copy())
             st.markdown("---")
             create_regional_analysis(df_filtered.copy())
-def main_app(user_name):
+def old2_main_app(user_name):
     """
     Fungsi utama yang menjalankan seluruh aplikasi dashboard,
     dari unggah file hingga menampilkan semua analisis.
@@ -1099,6 +1153,96 @@ def main_app(user_name):
             create_discount_effectiveness_analysis(df_filtered.copy())
             st.markdown("---")
             create_regional_analysis(df_filtered.copy())
+# GANTI SELURUH FUNGSI main_app ANDA DENGAN INI
+def main_app(user_name):
+    if 'data_processed' not in st.session_state:
+        st.session_state.data_processed = False
+
+    # Sidebar: Autentikasi dan Unggah
+    authenticator.logout("Logout", "sidebar")
+    st.sidebar.success(f"Login sebagai: **{user_name}**")
+    st.sidebar.title("📤 Unggah Data Master")
+
+    # UPLOAD DUA FILE MASTER
+    sales_file = st.sidebar.file_uploader("1. Unggah Penjualan Master (.feather)", type=["feather"])
+    complaint_file = st.sidebar.file_uploader("2. Unggah Komplain Master (.feather)", type=["feather"])
+
+    if sales_file is None or complaint_file is None:
+        st.info("👋 Selamat datang! Silakan unggah file `penjualan_master.feather` dan `komplain_master.feather`.")
+        st.stop()
+        
+    # Memuat data
+    df_sales_raw = load_feather_file(sales_file)
+    df_complaints_raw = load_feather_file(complaint_file)
+    
+    if df_sales_raw is None or df_complaints_raw is None:
+        st.error("Gagal memuat salah satu atau kedua file data.")
+        st.stop()
+        
+    st.session_state.df_sales = df_sales_raw
+    st.session_state.df_complaints = df_complaints_raw
+
+    # Sidebar: Filter Global
+    st.sidebar.title("⚙️ Filter Global")
+    df_sales = st.session_state.df_sales
+    df_complaints = st.session_state.df_complaints
+    
+    ALL_BRANCHES_OPTION = "Semua Cabang (Gabungan)"
+    unique_branches = sorted(df_sales['Branch'].unique())
+    selected_branch = st.sidebar.selectbox("Pilih Cabang", [ALL_BRANCHES_OPTION] + unique_branches)
+    
+    min_date = df_sales['Sales Date'].min().date()
+    max_date = df_sales['Sales Date'].max().date()
+    date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_date=max_date)
+
+    if len(date_range) != 2: st.stop()
+    start_date, end_date = date_range
+
+    # Menerapkan filter ke kedua DataFrame
+    date_mask = (df_sales['Sales Date'].dt.date >= start_date) & (df_sales['Sales Date'].dt.date <= end_date)
+    df_sales_filtered = df_sales[date_mask]
+    
+    complaint_date_mask = (df_complaints['Sales Date'].dt.date >= start_date) & (df_complaints['Sales Date'].dt.date <= end_date)
+    df_complaints_filtered = df_complaints[complaint_date_mask]
+
+    if selected_branch != ALL_BRANCHES_OPTION:
+        df_sales_filtered = df_sales_filtered[df_sales_filtered['Branch'] == selected_branch]
+        df_complaints_filtered = df_complaints_filtered[df_complaints_filtered['Branch'] == selected_branch]
+
+    if df_sales_filtered.empty:
+        st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih.")
+        st.stop()
+
+    st.title(f"Dashboard Analisis Holistik: {selected_branch}")
+    st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
+
+    # --- Kalkulasi Analisis ---
+    monthly_agg = analyze_monthly_trends(df_sales_filtered)
+    # (Catatan: fungsi analisis penjualan lama lainnya bisa dipanggil di sini jika masih relevan)
+    
+    # Kalkulasi untuk analisis kualitas
+    df_branch_health = calculate_branch_health(df_sales_filtered, df_complaints_filtered)
+    
+    # --- Tata Letak Tab Baru ---
+    penjualan_tab, kualitas_tab = st.tabs([
+        "📈 **Dashboard Performa Penjualan**", 
+        "✅ **Dashboard Kualitas & Komplain**"
+    ])
+    
+    with penjualan_tab:
+        st.header("Analisis Tren Performa Jangka Panjang")
+        if monthly_agg is not None and not monthly_agg.empty:
+            display_monthly_kpis(monthly_agg)
+            display_trend_chart_and_analysis(monthly_agg, 'TotalMonthlySales', 'Penjualan', 'royalblue')
+        else:
+            st.warning("Tidak ada data bulanan untuk analisis tren.")
+        # ... (Anda bisa menambahkan analisis penjualan lainnya di sini)
+
+    with kualitas_tab:
+        st.header("Analisis Kualitas Layanan dan Penanganan Komplain")
+        display_branch_health(df_branch_health)
+        st.markdown("---")
+        display_complaint_analysis(df_complaints_filtered)
 # ==============================================================================
 # LOGIKA AUTENTIKASI
 # ==============================================================================
