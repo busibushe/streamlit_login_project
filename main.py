@@ -221,7 +221,7 @@ def main_app(user_name):
     
     min_date = df_sales['Sales Date'].min().date()
     max_date = df_sales['Sales Date'].max().date()
-    date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_date=max_date)
+    date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 
     if len(date_range) != 2: st.stop()
     start_date, end_date = date_range
