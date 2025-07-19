@@ -1188,7 +1188,8 @@ def main_app(user_name):
     df_complaints = st.session_state.df_complaints
     
     ALL_BRANCHES_OPTION = "Semua Cabang (Gabungan)"
-    unique_branches = sorted(df_sales['Branch'].unique())
+    # PERBAIKAN: Buang nilai kosong (None/NaN) dan pastikan semua data adalah string sebelum diurutkan
+    unique_branches = sorted([str(branch) for branch in df_processed['Branch'].unique() if pd.notna(branch)])
     selected_branch = st.sidebar.selectbox("Pilih Cabang", [ALL_BRANCHES_OPTION] + unique_branches)
     
     min_date = df_sales['Sales Date'].min().date()
