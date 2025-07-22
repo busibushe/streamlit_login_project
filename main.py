@@ -135,7 +135,7 @@ def display_price_group_analysis(analysis_results):
     st.plotly_chart(fig, use_container_width=True)
     st.info("Grafik ini membandingkan **pendapatan (biru)** dengan **popularitas (oranye)** untuk setiap kelompok harga.")
 
-# --- FUNGSI UNTUK ANALISIS KUALITAS & KOMPLAIN ---
+# --- FUNGSI UNTUK ANALISIS KUALITAS, KOMPLAIN, & ANALISIS QA/QC ---
 
 def calculate_branch_health(df_sales, df_complaints):
     """Menghitung metrik kesehatan cabang."""
@@ -179,10 +179,48 @@ def display_complaint_analysis(df_complaints):
         fig2 = px.bar(golongan_agg, x='golongan', y='count', title="Jumlah Komplain per Golongan Prioritas", color='golongan', color_discrete_map={'merah':'#EF553B', 'orange':'#FFA15A', 'hijau':'#00CC96'})
         st.plotly_chart(fig2, use_container_width=True)
 
+# FUNGSI UNTUK 
+def display_qa_qc_analysis(df_qa_qc):
+    """Menampilkan analisis data audit QA/QC."""
+    st.subheader("⭐ Dashboard Kepatuhan Standar (QA/QC)")
+    
+    if df_qa_qc.empty:
+        st.warning("Tidak ada data audit QA/QC untuk periode dan cabang yang dipilih.")
+        return
+    
+    # Tampilkan skor rata-rata sebagai KPI utama
+    avg_score = df_qa_qc['Skor Kepatuhan'].mean()
+    st.metric("Rata-rata Skor Kepatuhan (Compliance Score)", f"{avg_score:.1f}%")
+
+    # Tampilkan tren skor kepatuhan dari waktu ke waktu
+    st.markdown("##### Tren Skor Kepatuhan per Audit")
+    fig1 = px.line(
+        df_qa_qc.sort_values('Sales Date'), 
+        x='Sales Date', 
+        y='Skor Kepatuhan',
+        color='Branch',
+        markers=True,
+        title="Tren Skor Kepatuhan per Audit"
+    )
+    fig1.update_yaxes(range=[0, 105]) # Set sumbu Y dari 0-105%
+    st.plotly_chart(fig1, use_container_width=True)
+
+    # Tampilkan perbandingan skor rata-rata antar cabang
+    st.markdown("##### Perbandingan Rata-rata Skor per Cabang")
+    branch_avg_score = df_qa_qc.groupby('Branch')['Skor Kepatuhan'].mean().reset_index().sort_values('Skor Kepatuhan', ascending=False)
+    fig2 = px.bar(
+        branch_avg_score,
+        x='Branch',
+        y='Skor Kepatuhan',
+        title="Perbandingan Rata-rata Skor Kepatuhan antar Cabang",
+        color='Skor Kepatuhan',
+        color_continuous_scale='Greens'
+    )
+    st.plotly_chart(fig2, use_container_width=True)
 # ==============================================================================
 # APLIKASI UTAMA STREAMLIT
 # ==============================================================================
-def main_app(user_name):
+def old_main_app(user_name):
     """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
 
     # Sidebar: Autentikasi dan Unggah
@@ -274,6 +312,104 @@ def main_app(user_name):
         st.markdown("---")
         display_complaint_analysis(df_complaints_filtered)
 
+# GANTI FUNGSI main_app ANDA DENGAN VERSI LENGKAP INI
+
+def main_app(user_name):
+    """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
+
+    # Sidebar: Autentikasi dan Unggah
+    authenticator.logout("Logout", "sidebar")
+    st.sidebar.success(f"Login sebagai: **{user_name}**")
+    st.sidebar.title("📤 Unggah Data Master")
+
+    # UPLOAD TIGA FILE MASTER
+    sales_file = st.sidebar.file_uploader("1. Unggah Penjualan Master (.feather)", type=["feather"])
+    complaint_file = st.sidebar.file_uploader("2. Unggah Komplain Master (.feather)", type=["feather"])
+    qa_qc_file = st.sidebar.file_uploader("3. Unggah QA/QC Master (.feather)", type=["feather"])
+
+    if sales_file is None or complaint_file is None or qa_qc_file is None:
+        st.info("👋 Selamat datang! Silakan unggah ketiga file master: penjualan, komplain, dan QA/QC.")
+        st.stop()
+        
+    # Memuat data
+    df_sales = load_feather_file(sales_file)
+    df_complaints = load_feather_file(complaint_file)
+    df_qa_qc = load_feather_file(qa_qc_file)
+    
+    if df_sales is None or df_complaints is None or df_qa_qc is None:
+        st.error("Gagal memuat salah satu dari tiga file data.")
+        st.stop()
+        
+    st.session_state.df_sales = df_sales
+    st.session_state.df_complaints = df_complaints
+    st.session_state.df_qa_qc = df_qa_qc
+
+    # Sidebar: Filter Global
+    st.sidebar.title("⚙️ Filter Global")
+    
+    ALL_BRANCHES_OPTION = "Semua Cabang (Gabungan)"
+    unique_branches = sorted([str(branch) for branch in df_sales['Branch'].unique() if pd.notna(branch)])
+    branch_options = [ALL_BRANCHES_OPTION] + unique_branches
+    selected_branch = st.sidebar.selectbox("Pilih Cabang", branch_options)
+    
+    min_date = df_sales['Sales Date'].min().date()
+    max_date = df_sales['Sales Date'].max().date()
+    date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+
+    if len(date_range) != 2: st.stop()
+    start_date, end_date = date_range
+
+    # Menerapkan filter ke semua DataFrame
+    date_mask_sales = (df_sales['Sales Date'].dt.date >= start_date) & (df_sales['Sales Date'].dt.date <= end_date)
+    df_sales_filtered = df_sales[date_mask_sales]
+    
+    date_mask_complaints = (df_complaints['Sales Date'].dt.date >= start_date) & (df_complaints['Sales Date'].dt.date <= end_date)
+    df_complaints_filtered = df_complaints[date_mask_complaints]
+    
+    date_mask_qa_qc = (df_qa_qc['Sales Date'].dt.date >= start_date) & (df_qa_qc['Sales Date'].dt.date <= end_date)
+    df_qa_qc_filtered = df_qa_qc[date_mask_qa_qc]
+
+    if selected_branch != ALL_BRANCHES_OPTION:
+        df_sales_filtered = df_sales_filtered[df_sales_filtered['Branch'] == selected_branch]
+        df_complaints_filtered = df_complaints_filtered[df_complaints_filtered['Branch'] == selected_branch]
+        df_qa_qc_filtered = df_qa_qc_filtered[df_qa_qc_filtered['Branch'] == selected_branch]
+
+    if df_sales_filtered.empty:
+        st.warning("Tidak ada data penjualan yang ditemukan untuk filter yang Anda pilih.")
+        st.stop()
+
+    st.title(f"Dashboard Analisis Holistik: {selected_branch}")
+    st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
+
+    # --- Kalkulasi Analisis ---
+    monthly_agg = analyze_monthly_trends(df_sales_filtered)
+    price_group_results = calculate_price_group_analysis(df_sales_filtered)
+    df_branch_health = calculate_branch_health(df_sales_filtered, df_complaints_filtered)
+    
+    # --- Tata Letak Tab ---
+    penjualan_tab, kualitas_tab, qa_qc_tab = st.tabs([
+        "📈 **Dashboard Performa Penjualan**", 
+        "✅ **Dashboard Kualitas & Komplain**",
+        "⭐ **Dashboard Kepatuhan QA/QC**"
+    ])
+    
+    with penjualan_tab:
+        st.header("Analisis Tren Performa Penjualan")
+        if monthly_agg is not None and not monthly_agg.empty:
+            display_monthly_kpis(monthly_agg)
+            display_trend_chart_and_analysis(monthly_agg, 'TotalMonthlySales', 'Penjualan', 'royalblue')
+        st.markdown("---")
+        display_price_group_analysis(price_group_results)
+
+    with kualitas_tab:
+        st.header("Analisis Kualitas Layanan dan Penanganan Komplain")
+        display_branch_health(df_branch_health)
+        st.markdown("---")
+        display_complaint_analysis(df_complaints_filtered)
+        
+    with qa_qc_tab:
+        st.header("Analisis Kepatuhan Standar Operasional")
+        display_qa_qc_analysis(df_qa_qc_filtered)
 # ==============================================================================
 # LOGIKA AUTENTIKASI
 # ==============================================================================
