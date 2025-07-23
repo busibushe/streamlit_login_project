@@ -13,74 +13,111 @@ from sklearn.cluster import KMeans
 # KONFIGURASI APLIKASI
 # ==============================================================================
 st.set_page_config(
-    page_title="Dashboard F&B Holistik",
-    page_icon="🚀",
+    page_title="Dasbor Analisis Dinamis",
+    page_icon="🧩",
     layout="wide"
 )
 
+# Inisialisasi session state jika belum ada
+if 'mapping_confirmed' not in st.session_state:
+    st.session_state.mapping_confirmed = False
+
 # ==============================================================================
-# FUNGSI PEMUATAN DATA
+# FUNGSI PEMUATAN & PEMETAAN DATA
 # ==============================================================================
 @st.cache_data
 def load_feather_file(uploaded_file):
-    """Memuat satu file Feather dan memastikan tipe data tanggal."""
-    if uploaded_file is None:
-        return None
+    """Memuat satu file Feather."""
+    if uploaded_file is None: return None
     try:
-        df = pd.read_feather(uploaded_file)
-        if 'Sales Date' in df.columns:
-            df['Sales Date'] = pd.to_datetime(df['Sales Date'])
-        return df
+        return pd.read_feather(uploaded_file)
     except Exception as e:
         st.error(f"Gagal memuat file Feather: {e}")
         return None
 
+def display_column_mapper(df_sales, df_complaints, df_qa_qc):
+    """Menampilkan UI untuk memetakan kolom di sidebar."""
+    st.sidebar.title("🗺️ Pemetaan Kolom")
+    st.sidebar.warning("Harap petakan kolom dari file Anda sebelum melanjutkan.")
+
+    sales_cols = [""] + list(df_sales.columns)
+    complaint_cols = [""] + list(df_complaints.columns)
+    qa_qc_cols = [""] + list(df_qa_qc.columns)
+
+    def get_default_index(options, default_values):
+        for val in default_values:
+            if val in options:
+                return options.index(val)
+        return 0
+
+    mapping = {}
+    with st.sidebar.expander("1. Data Penjualan", expanded=True):
+        mapping['sales_date'] = st.selectbox("Kolom Tanggal Transaksi", sales_cols, index=get_default_index(sales_cols, ['Sales Date', 'date', 'Date', 'Tanggal']))
+        mapping['branch'] = st.selectbox("Kolom Nama Cabang/Toko", sales_cols, index=get_default_index(sales_cols, ['Branch', 'Toko', 'store', 'Cabang']))
+        mapping['nett_sales'] = st.selectbox("Kolom Penjualan (numerik)", sales_cols, index=get_default_index(sales_cols, ['Nett Sales', 'Sales', 'Revenue', 'penjualan']))
+        mapping['bill_number'] = st.selectbox("Kolom ID Transaksi/Bill", sales_cols, index=get_default_index(sales_cols, ['Bill Number', 'bill_id', 'No Bill']))
+        mapping['menu'] = st.selectbox("Kolom Nama Menu/Produk", sales_cols, index=get_default_index(sales_cols, ['Menu', 'Produk', 'Item', 'product_name']))
+        mapping['qty'] = st.selectbox("Kolom Kuantitas (numerik)", sales_cols, index=get_default_index(sales_cols, ['Qty', 'quantity', 'jumlah']))
+
+    with st.sidebar.expander("2. Data Komplain", expanded=True):
+        mapping['complaint_date'] = st.selectbox("Kolom Tanggal Komplain", complaint_cols, index=get_default_index(complaint_cols, ['Sales Date', 'date', 'Date', 'Tanggal']))
+        mapping['complaint_branch'] = st.selectbox("Kolom Cabang (Komplain)", complaint_cols, index=get_default_index(complaint_cols, ['Branch', 'Toko', 'store', 'Cabang']))
+        mapping['complaint_category'] = st.selectbox("Kolom Kategori Kesalahan", complaint_cols, index=get_default_index(complaint_cols, ['kesalahan', 'category', 'kategori']))
+        mapping['complaint_priority'] = st.selectbox("Kolom Prioritas/Golongan", complaint_cols, index=get_default_index(complaint_cols, ['golongan', 'priority', 'prioritas']))
+        mapping['resolution_time'] = st.selectbox("Kolom Waktu Penyelesaian (numerik)", complaint_cols, index=get_default_index(complaint_cols, ['Waktu Penyelesaian (Jam)', 'resolution_hours']))
+
+    with st.sidebar.expander("3. Data QA/QC", expanded=True):
+        mapping['qa_date'] = st.selectbox("Kolom Tanggal Audit QA/QC", qa_qc_cols, index=get_default_index(qa_qc_cols, ['Sales Date', 'date', 'Date', 'Tanggal']))
+        mapping['qa_branch'] = st.selectbox("Kolom Cabang (QA/QC)", qa_qc_cols, index=get_default_index(qa_qc_cols, ['Branch', 'Toko', 'store', 'Cabang']))
+        mapping['qa_score'] = st.selectbox("Kolom Skor Kepatuhan (numerik)", qa_qc_cols, index=get_default_index(qa_qc_cols, ['Skor Kepatuhan', 'Score', 'Nilai']))
+
+    if st.sidebar.button("✅ Terapkan Pemetaan", type="primary"):
+        # Validasi bahwa semua kolom penting telah dipilih
+        required_cols = [v for k, v in mapping.items() if 'date' in k or 'branch' in k or 'sales' in k or 'bill' in k or 'score' in k]
+        if "" in required_cols or None in required_cols:
+            st.sidebar.error("Harap isi semua kolom pemetaan yang wajib.")
+        else:
+            st.session_state.column_mapping = mapping
+            st.session_state.mapping_confirmed = True
+            st.rerun()
+
 # ==============================================================================
-# FUNGSI-FUNGSI ANALISIS & VISUALISASI (Tidak Berubah)
+# FUNGSI-FUNGSI ANALISIS & VISUALISASI (TELAH DIMODIFIKASI)
 # ==============================================================================
 
-def analyze_monthly_trends(df_filtered):
-    monthly_df = df_filtered.copy()
-    monthly_df['Bulan'] = monthly_df['Sales Date'].dt.to_period('M')
-    monthly_agg = monthly_df.groupby('Bulan').agg(
-        TotalMonthlySales=('Nett Sales', 'sum'),
-        TotalTransactions=('Bill Number', 'nunique')
+def analyze_monthly_trends(df, mapping):
+    df['Bulan'] = df[mapping['sales_date']].dt.to_period('M')
+    monthly_agg = df.groupby('Bulan').agg(
+        TotalMonthlySales=(mapping['nett_sales'], 'sum'),
+        TotalTransactions=(mapping['bill_number'], 'nunique')
     ).reset_index()
 
     if not monthly_agg.empty:
-        monthly_agg['AOV'] = monthly_agg.apply(
-            lambda row: row['TotalMonthlySales'] / row['TotalTransactions'] if row['TotalTransactions'] > 0 else 0,
-            axis=1
-        )
+        monthly_agg['AOV'] = monthly_agg.apply(lambda r: r['TotalMonthlySales'] / r['TotalTransactions'] if r['TotalTransactions'] > 0 else 0, axis=1)
         monthly_agg['Bulan'] = monthly_agg['Bulan'].dt.to_timestamp()
     return monthly_agg
 
 def display_monthly_kpis(monthly_agg):
+    # Fungsi ini tidak perlu diubah karena menerima data yang sudah diagregasi
     if len(monthly_agg) < 1: return
     kpi_cols = st.columns(3)
     last_month = monthly_agg.iloc[-1]
     prev_month = monthly_agg.iloc[-2] if len(monthly_agg) >= 2 else None
-
     def display_kpi(col, title, current_val, prev_val, help_text, is_currency=True):
         delta = None
         if prev_val is not None and pd.notna(prev_val) and prev_val > 0:
             delta = (current_val - prev_val) / prev_val
         val_format = f"Rp {current_val:,.0f}" if is_currency else f"{current_val:,.0f}"
         col.metric(title, val_format, f"{delta:.1%}" if delta is not None else None, help=help_text if delta is not None else None)
-
     help_str = f"Dibandingkan {prev_month['Bulan'].strftime('%b %Y')}" if prev_month is not None else ""
     display_kpi(kpi_cols[0], "💰 Penjualan Bulanan", last_month.get('TotalMonthlySales', 0), prev_month.get('TotalMonthlySales') if prev_month is not None else None, help_str, True)
     display_kpi(kpi_cols[1], "🛒 Transaksi Bulanan", last_month.get('TotalTransactions', 0), prev_month.get('TotalTransactions') if prev_month is not None else None, help_str, False)
     display_kpi(kpi_cols[2], "💳 AOV Bulanan", last_month.get('AOV', 0), prev_month.get('AOV') if prev_month is not None else None, help_str, True)
 
-def display_trend_chart_and_analysis(df_data, y_col, y_label, color):
-    fig = px.line(df_data, x='Bulan', y=y_col, markers=True, labels={'Bulan': 'Bulan', y_col: y_label})
-    fig.update_traces(line_color=color, name=y_label)
-    st.plotly_chart(fig, use_container_width=True)
-
-def calculate_price_group_analysis(df):
-    if 'Menu' not in df.columns or 'Nett Sales' not in df.columns or 'Qty' not in df.columns: return None
-    menu_prices = df.groupby('Menu').agg(TotalSales=('Nett Sales', 'sum'), TotalQty=('Qty', 'sum')).reset_index()
+def calculate_price_group_analysis(df, mapping):
+    required_cols = [mapping['menu'], mapping['nett_sales'], mapping['qty']]
+    if not all(col in df.columns for col in required_cols): return None
+    menu_prices = df.groupby(mapping['menu']).agg(TotalSales=(mapping['nett_sales'], 'sum'), TotalQty=(mapping['qty'], 'sum')).reset_index()
     menu_prices = menu_prices[menu_prices['TotalQty'] > 0]
     menu_prices['AvgPrice'] = menu_prices['TotalSales'] / menu_prices['TotalQty']
     if len(menu_prices) < 4: return None
@@ -93,12 +130,46 @@ def calculate_price_group_analysis(df):
     sorted_groups = menu_prices.groupby('PriceGroup')['AvgPrice'].mean().sort_values().index
     final_label_map = {group: group + price_order[i] for i, group in enumerate(sorted_groups)}
     menu_prices['PriceGroup'] = menu_prices['PriceGroup'].map(final_label_map)
-    df_with_groups = pd.merge(df, menu_prices[['Menu', 'PriceGroup']], on='Menu', how='left')
-    group_performance = df_with_groups.groupby('PriceGroup').agg(TotalSales=('Nett Sales', 'sum'), TotalQty=('Qty', 'sum')).reset_index()
+    df_with_groups = pd.merge(df, menu_prices[[mapping['menu'], 'PriceGroup']], on=mapping['menu'], how='left')
+    group_performance = df_with_groups.groupby('PriceGroup').agg(TotalSales=(mapping['nett_sales'], 'sum'), TotalQty=(mapping['qty'], 'sum')).reset_index()
     group_performance['sort_order'] = group_performance['PriceGroup'].str.extract('(\\d+)').astype(int)
-    group_performance = group_performance.sort_values('sort_order').drop(columns='sort_order')
-    return group_performance
+    return group_performance.sort_values('sort_order').drop(columns='sort_order')
 
+def calculate_branch_health(df_sales, df_complaints, mapping):
+    sales_agg = df_sales.groupby(mapping['branch']).agg(TotalSales=(mapping['nett_sales'], 'sum'), TotalTransactions=(mapping['bill_number'], 'nunique')).reset_index()
+    if df_complaints.empty or not all(c in df_complaints.columns for c in [mapping['complaint_branch'], mapping['resolution_time']]):
+        complaints_agg = pd.DataFrame(columns=[mapping['complaint_branch'], 'TotalComplaints', 'AvgResolutionTime'])
+    else:
+        complaints_agg = df_complaints.groupby(mapping['complaint_branch']).agg(TotalComplaints=(mapping['complaint_branch'], 'count'), AvgResolutionTime=(mapping['resolution_time'], 'mean')).reset_index()
+    df_health = pd.merge(sales_agg, complaints_agg, left_on=mapping['branch'], right_on=mapping['complaint_branch'], how='left').fillna(0)
+    df_health['ComplaintRatio'] = df_health.apply(lambda r: (r['TotalComplaints'] / r['TotalTransactions']) * 1000 if r['TotalTransactions'] > 0 else 0, axis=1)
+    return df_health
+
+def display_complaint_analysis(df_complaints, mapping):
+    st.subheader("Analisis Detail Komplain")
+    if df_complaints.empty or not all(c in df_complaints.columns for c in [mapping['complaint_category'], mapping['complaint_priority']]):
+        st.warning("Data komplain atau kolom yang dibutuhkan tidak tersedia."); return
+    col1, col2 = st.columns(2)
+    with col1:
+        kesalahan_agg = df_complaints[mapping['complaint_category']].value_counts().reset_index()
+        fig1 = px.pie(kesalahan_agg, names=mapping['complaint_category'], values='count', title="Proporsi Kategori Kesalahan", hole=0.3)
+        st.plotly_chart(fig1, use_container_width=True)
+    with col2:
+        golongan_agg = df_complaints[mapping['complaint_priority']].value_counts().reset_index()
+        fig2 = px.bar(golongan_agg, x=mapping['complaint_priority'], y='count', title="Jumlah Komplain per Golongan Prioritas", color=mapping['complaint_priority'])
+        st.plotly_chart(fig2, use_container_width=True)
+
+def display_qa_qc_analysis(df_qa_qc, mapping):
+    st.subheader("⭐ Dashboard Kepatuhan Standar (QA/QC)")
+    if df_qa_qc.empty or not all(c in df_qa_qc.columns for c in [mapping['qa_score'], mapping['qa_date'], mapping['qa_branch']]):
+        st.warning("Data QA/QC atau kolom yang dibutuhkan tidak tersedia."); return
+    avg_score = df_qa_qc[mapping['qa_score']].mean()
+    st.metric("Rata-rata Skor Kepatuhan (Compliance Score)", f"{avg_score:.1f}%")
+    st.markdown("##### Tren Skor Kepatuhan per Audit")
+    fig1 = px.line(df_qa_qc.sort_values(mapping['qa_date']), x=mapping['qa_date'], y=mapping['qa_score'], color=mapping['qa_branch'], markers=True, title="Tren Skor Kepatuhan per Audit")
+    st.plotly_chart(fig1, use_container_width=True)
+
+# ... (Fungsi display_price_group_analysis, display_branch_health, dan display_trend_chart_and_analysis tidak perlu diubah) ...
 def display_price_group_analysis(analysis_results):
     st.subheader("📊 Analisis Kelompok Harga")
     if analysis_results is None or analysis_results.empty:
@@ -111,17 +182,6 @@ def display_price_group_analysis(analysis_results):
     fig.update_yaxes(title_text="<b>Total Penjualan (Rp)</b>", secondary_y=False)
     fig.update_yaxes(title_text="<b>Total Kuantitas Terjual</b>", secondary_y=True)
     st.plotly_chart(fig, use_container_width=True)
-
-def calculate_branch_health(df_sales, df_complaints):
-    sales_agg = df_sales.groupby('Branch').agg(TotalSales=('Nett Sales', 'sum'), TotalTransactions=('Bill Number', 'nunique')).reset_index()
-    if df_complaints.empty:
-        complaints_agg = pd.DataFrame(columns=['Branch', 'TotalComplaints', 'AvgResolutionTime'])
-    else:
-        complaints_agg = df_complaints.groupby('Branch').agg(TotalComplaints=('Branch', 'count'), AvgResolutionTime=('Waktu Penyelesaian (Jam)', 'mean')).reset_index()
-    df_health = pd.merge(sales_agg, complaints_agg, on='Branch', how='left').fillna(0)
-    df_health['ComplaintRatio'] = df_health.apply(lambda row: (row['TotalComplaints'] / row['TotalTransactions']) * 1000 if row['TotalTransactions'] > 0 else 0, axis=1)
-    return df_health
-
 def display_branch_health(df_health):
     st.subheader("Dashboard Kesehatan Cabang")
     col1, col2 = st.columns(2)
@@ -131,44 +191,70 @@ def display_branch_health(df_health):
     with col2:
         fig2 = px.bar(df_health, x='Branch', y='AvgResolutionTime', title="Rata-rata Waktu Penyelesaian Komplain (Jam)", color='AvgResolutionTime', color_continuous_scale='Oranges')
         st.plotly_chart(fig2, use_container_width=True)
-
-def display_complaint_analysis(df_complaints):
-    st.subheader("Analisis Detail Komplain")
-    if df_complaints.empty:
-        st.warning("Tidak ada data komplain untuk periode dan cabang yang dipilih.")
-        return
-    col1, col2 = st.columns(2)
-    with col1:
-        kesalahan_agg = df_complaints['kesalahan'].value_counts().reset_index()
-        fig1 = px.pie(kesalahan_agg, names='kesalahan', values='count', title="Proporsi Kategori Kesalahan", hole=0.3)
-        st.plotly_chart(fig1, use_container_width=True)
-    with col2:
-        golongan_agg = df_complaints['golongan'].value_counts().reset_index()
-        fig2 = px.bar(golongan_agg, x='golongan', y='count', title="Jumlah Komplain per Golongan Prioritas", color='golongan', color_discrete_map={'merah':'#EF553B', 'orange':'#FFA15A', 'hijau':'#00CC96'})
-        st.plotly_chart(fig2, use_container_width=True)
-
-def display_qa_qc_analysis(df_qa_qc):
-    st.subheader("⭐ Dashboard Kepatuhan Standar (QA/QC)")
-    if df_qa_qc.empty:
-        st.warning("Tidak ada data audit QA/QC untuk periode dan cabang yang dipilih.")
-        return
-    avg_score = df_qa_qc['Skor Kepatuhan'].mean()
-    st.metric("Rata-rata Skor Kepatuhan (Compliance Score)", f"{avg_score:.1f}%")
-    st.markdown("##### Tren Skor Kepatuhan per Audit")
-    fig1 = px.line(df_qa_qc.sort_values('Sales Date'), x='Sales Date', y='Skor Kepatuhan', color='Branch', markers=True, title="Tren Skor Kepatuhan per Audit")
-    fig1.update_yaxes(range=[0, 105])
-    st.plotly_chart(fig1, use_container_width=True)
-    st.markdown("##### Perbandingan Rata-rata Skor per Cabang")
-    branch_avg_score = df_qa_qc.groupby('Branch')['Skor Kepatuhan'].mean().reset_index().sort_values('Skor Kepatuhan', ascending=False)
-    fig2 = px.bar(branch_avg_score, x='Branch', y='Skor Kepatuhan', title="Perbandingan Rata-rata Skor Kepatuhan antar Cabang", color='Skor Kepatuhan', color_continuous_scale='Greens')
-    st.plotly_chart(fig2, use_container_width=True)
+def display_trend_chart_and_analysis(df_data, y_col, y_label, color):
+    fig = px.line(df_data, x='Bulan', y=y_col, markers=True, labels={'Bulan': 'Bulan', y_col: y_label})
+    fig.update_traces(line_color=color, name=y_label)
+    st.plotly_chart(fig, use_container_width=True)
 
 # ==============================================================================
-# FUNGSI-FUNGSI UNTUK AGENTIC AI ROOT CAUSE ANALYSIS
+# FUNGSI-FUNGSI AGENT AI (TELAH DIMODIFIKASI)
 # ==============================================================================
 
-# --- A. FUNGSI UNTUK AGENT OPERASIONAL (JANGKA PENDEK / MINGGUAN) ---
+def run_operational_agent(df_sales, df_complaints, df_qa_qc, mapping):
+    all_branches = sorted([str(b) for b in df_sales[mapping['branch']].unique() if pd.notna(b)])
+    knowledge_base = get_operational_knowledge_base()
+    results = []
+    for branch in all_branches:
+        sales_br = df_sales[df_sales[mapping['branch']] == branch]
+        complaints_br = df_complaints[df_complaints[mapping['complaint_branch']] == branch]
+        qa_qc_br = df_qa_qc[df_qa_qc[mapping['qa_branch']] == branch]
+        daily_sales = sales_br.groupby(pd.Grouper(key=mapping['sales_date'], freq='D')).agg(DailySales=(mapping['nett_sales'], 'sum'), Transactions=(mapping['bill_number'], 'nunique')).reset_index()
+        daily_sales['AOV'] = (daily_sales['DailySales'] / daily_sales['Transactions']).fillna(0)
+        daily_complaints = complaints_br.groupby(pd.Grouper(key=mapping['complaint_date'], freq='D')).size().reset_index(name='Complaints')
+        last_qa_qc_status = "BAIK"
+        if not qa_qc_br.empty:
+            last_audit_score = qa_qc_br.sort_values(mapping['qa_date']).iloc[-1][mapping['qa_score']]
+            if last_audit_score < 75: last_qa_qc_status = "RENDAH"
+        status = {
+            "sales": analyze_short_term_metric_status(daily_sales, mapping['sales_date'], 'DailySales'),
+            "transactions": analyze_short_term_metric_status(daily_sales, mapping['sales_date'], 'Transactions'),
+            "aov": analyze_short_term_metric_status(daily_sales, mapping['sales_date'], 'AOV'),
+            "complaints": analyze_short_term_metric_status(daily_complaints, mapping['complaint_date'], 'Complaints'),
+            "qa_qc": last_qa_qc_status
+        }
+        causes = {rule["root_cause"] for rule in knowledge_base if rule["condition"](status)}
+        results.append({"Toko": branch, "Penjualan (7d)": status["sales"], "Transaksi (7d)": status["transactions"], "AOV (7d)": status["aov"], "Komplain (7d)": status["complaints"], "Audit Terakhir": status["qa_qc"], "Analisis Operasional": ", ".join(causes) if causes else "Performa operasional stabil."})
+    return pd.DataFrame(results)
 
+def run_strategic_agent(df_sales, df_complaints, df_qa_qc, mapping):
+    all_branches = sorted([str(b) for b in df_sales[mapping['branch']].unique() if pd.notna(b)])
+    knowledge_base = get_strategic_knowledge_base()
+    results = []
+    for branch in all_branches:
+        sales_br = df_sales[df_sales[mapping['branch']] == branch]
+        complaints_br = df_complaints[df_complaints[mapping['complaint_branch']] == branch]
+        qa_qc_br = df_qa_qc[df_qa_qc[mapping['qa_branch']] == branch]
+        bill_agg = sales_br.groupby([mapping['bill_number'], pd.Grouper(key=mapping['sales_date'], freq='M')])[mapping['nett_sales']].sum().reset_index()
+        monthly_aov_df = bill_agg.groupby(mapping['sales_date'])[mapping['nett_sales']].mean().reset_index().rename(columns={mapping['nett_sales']: 'AOV'})
+        qa_qc_score = "TIDAK ADA DATA"
+        if not qa_qc_br.empty:
+            avg_score = qa_qc_br[mapping['qa_score']].mean()
+            if avg_score < 75: qa_qc_score = "RENDAH"
+            elif avg_score < 85: qa_qc_score = "SEDANG"
+            else: qa_qc_score = "TINGGI"
+        status = {
+            "sales": analyze_long_term_metric_status(sales_br, mapping['sales_date'], mapping['nett_sales'], 'sum'),
+            "transactions": analyze_long_term_metric_status(sales_br, mapping['sales_date'], mapping['bill_number'], 'nunique'),
+            "aov": analyze_long_term_metric_status(monthly_aov_df, mapping['sales_date'], 'AOV', 'mean'),
+            "complaints": analyze_long_term_metric_status(complaints_br, mapping['complaint_date'], mapping['complaint_branch'], 'count'),
+            "qa_qc": qa_qc_score
+        }
+        causes = {rule["root_cause"] for rule in knowledge_base if rule["condition"](status)}
+        results.append({"Toko": branch, "Tren Penjualan": status["sales"], "Tren Transaksi": status["transactions"], "Tren AOV": status["aov"], "Skor QA/QC": status["qa_qc"], "Tren Komplain": status["complaints"], "Analisis & Kemungkinan Akar Masalah": ", ".join(causes) if causes else "Tidak ada pola strategis signifikan."})
+    return pd.DataFrame(results)
+
+# (Fungsi analyze_short_term_metric_status, get_operational_knowledge_base, analyze_long_term_metric_status, get_strategic_knowledge_base, display_agent_analysis tidak perlu diubah)
+# Pastikan fungsi-fungsi ini ada di kode Anda dari versi sebelumnya.
 def analyze_short_term_metric_status(df, date_col, metric_col):
     """Menganalisis tren 7 hari vs 7 hari sebelumnya untuk deteksi dini."""
     if df is None or df.empty or metric_col not in df.columns or len(df.dropna(subset=[metric_col])) < 14:
@@ -198,44 +284,6 @@ def get_operational_knowledge_base():
         {"condition": lambda s: s["aov"] in ["MENURUN", "MENURUN TAJAM"], "root_cause": "Promo mingguan kurang efektif atau staf gagal melakukan upselling."},
         {"condition": lambda s: s["sales"] in ["MENINGKAT TAJAM"] and s["aov"] in ["MENINGKAT TAJAM"], "root_cause": "Program promosi jangka pendek sangat berhasil."},
     ]
-
-def run_operational_agent(df_sales, df_complaints, df_qa_qc):
-    """Menjalankan agent untuk analisis operasional (jangka pendek)."""
-    all_branches = sorted([str(b) for b in df_sales['Branch'].unique() if pd.notna(b)])
-    knowledge_base = get_operational_knowledge_base()
-    results = []
-
-    for branch in all_branches:
-        sales_br = df_sales[df_sales['Branch'] == branch]
-        complaints_br = df_complaints[df_complaints['Branch'] == branch]
-        qa_qc_br = df_qa_qc[df_qa_qc['Branch'] == branch]
-        
-        # Agregasi data harian
-        daily_sales = sales_br.groupby(pd.Grouper(key='Sales Date', freq='D')).agg(DailySales=('Nett Sales', 'sum'), Transactions=('Bill Number', 'nunique')).reset_index()
-        daily_sales['AOV'] = (daily_sales['DailySales'] / daily_sales['Transactions']).fillna(0)
-        daily_complaints = complaints_br.groupby(pd.Grouper(key='Sales Date', freq='D')).size().reset_index(name='Complaints')
-        
-        # Cek skor QA/QC terakhir
-        last_qa_qc_status = "BAIK"
-        if not qa_qc_br.empty:
-            last_audit_score = qa_qc_br.sort_values('Sales Date').iloc[-1]['Skor Kepatuhan']
-            if last_audit_score < 75: last_qa_qc_status = "RENDAH"
-
-        status = {
-            "sales": analyze_short_term_metric_status(daily_sales, 'Sales Date', 'DailySales'),
-            "transactions": analyze_short_term_metric_status(daily_sales, 'Sales Date', 'Transactions'),
-            "aov": analyze_short_term_metric_status(daily_sales, 'Sales Date', 'AOV'),
-            "complaints": analyze_short_term_metric_status(daily_complaints, 'Sales Date', 'Complaints'),
-            "qa_qc": last_qa_qc_status
-        }
-        
-        causes = {rule["root_cause"] for rule in knowledge_base if rule["condition"](status)}
-        results.append({"Toko": branch, "Penjualan (7d)": status["sales"], "Transaksi (7d)": status["transactions"], "AOV (7d)": status["aov"], "Komplain (7d)": status["complaints"], "Audit Terakhir": status["qa_qc"], "Analisis Operasional": ", ".join(causes) if causes else "Performa operasional stabil."})
-    
-    return pd.DataFrame(results)
-
-# --- B. FUNGSI UNTUK AGENT STRATEGIS (JANGKA PANJANG / 3-BULANAN) ---
-
 def analyze_long_term_metric_status(df, date_col, metric_col, agg_method='sum'):
     """Menganalisis tren bulanan (min 4 bulan) menggunakan regresi linear."""
     if df is None or df.empty or metric_col not in df.columns: return "TIDAK CUKUP DATA"
@@ -272,37 +320,6 @@ def get_strategic_knowledge_base():
         {"condition": lambda s: "TREN MENINGKAT" in s["sales"] and ("TINGGI" in s["qa_qc"] or "TREN MENURUN" in s["complaints"]), "root_cause": "Standar operasional yang baik mendorong pertumbuhan (Good operations standard / Good service)."},
         {"condition": lambda s: "MOMENTUM NEGATIF" in s["sales"] or "MOMENTUM NEGATIF" in s["transactions"], "root_cause": "Waspada! Performa melambat dalam 3 bulan terakhir, sinyal awal potensi penurunan tren."},
     ]
-
-def run_strategic_agent(df_sales, df_complaints, df_qa_qc):
-    """Menjalankan agent untuk analisis strategis (jangka panjang)."""
-    all_branches = sorted([str(b) for b in df_sales['Branch'].unique() if pd.notna(b)])
-    knowledge_base = get_strategic_knowledge_base()
-    results = []
-    for branch in all_branches:
-        sales_br = df_sales[df_sales['Branch'] == branch]
-        complaints_br = df_complaints[df_complaints['Branch'] == branch]
-        qa_qc_br = df_qa_qc[df_qa_qc['Branch'] == branch]
-        bill_agg = sales_br.groupby(['Bill Number', pd.Grouper(key='Sales Date', freq='M')])['Nett Sales'].sum().reset_index()
-        monthly_aov_df = bill_agg.groupby('Sales Date')['Nett Sales'].mean().reset_index().rename(columns={'Nett Sales': 'AOV'})
-        qa_qc_score = "TIDAK ADA DATA"
-        if not qa_qc_br.empty:
-            avg_score = qa_qc_br['Skor Kepatuhan'].mean()
-            if avg_score < 75: qa_qc_score = "RENDAH"
-            elif avg_score < 85: qa_qc_score = "SEDANG"
-            else: qa_qc_score = "TINGGI"
-        status = {
-            "sales": analyze_long_term_metric_status(sales_br, 'Sales Date', 'Nett Sales', 'sum'),
-            "transactions": analyze_long_term_metric_status(sales_br, 'Sales Date', 'Bill Number', 'nunique'),
-            "aov": analyze_long_term_metric_status(monthly_aov_df, 'Sales Date', 'AOV', 'mean'),
-            "complaints": analyze_long_term_metric_status(complaints_br, 'Sales Date', 'Branch', 'count'),
-            "qa_qc": qa_qc_score
-        }
-        causes = {rule["root_cause"] for rule in knowledge_base if rule["condition"](status)}
-        results.append({"Toko": branch, "Tren Penjualan": status["sales"], "Tren Transaksi": status["transactions"], "Tren AOV": status["aov"], "Skor QA/QC": status["qa_qc"], "Tren Komplain": status["complaints"], "Analisis & Kemungkinan Akar Masalah": ", ".join(causes) if causes else "Tidak ada pola strategis signifikan yang terdeteksi."})
-    return pd.DataFrame(results)
-
-# --- C. FUNGSI DISPLAY UNIVERSAL ---
-
 def display_agent_analysis(df_analysis, title, info_text):
     """Menampilkan hasil analisis dari AI Agent dalam bentuk tabel."""
     st.header(title)
@@ -321,118 +338,114 @@ def display_agent_analysis(df_analysis, title, info_text):
     styled_df = df_display.style.apply(lambda col: col.map(style_status), subset=pd.IndexSlice[:, df_display.columns != last_column_name])
     st.dataframe(styled_df, use_container_width=True)
 
-
 # ==============================================================================
 # APLIKASI UTAMA STREAMLIT
 # ==============================================================================
 def main_app(user_name):
-    """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
-
-    if 'authenticator' in globals() and 'name' in st.session_state and st.session_state.name:
-      authenticator.logout("Logout", "sidebar")
-      st.sidebar.success(f"Login sebagai: **{user_name}**")
-
     st.sidebar.title("📤 Unggah Data Master")
     sales_file = st.sidebar.file_uploader("1. Unggah Penjualan Master (.feather)", type=["feather"])
     complaint_file = st.sidebar.file_uploader("2. Unggah Komplain Master (.feather)", type=["feather"])
     qa_qc_file = st.sidebar.file_uploader("3. Unggah QA/QC Master (.feather)", type=["feather"])
 
-    if sales_file is None or complaint_file is None or qa_qc_file is None:
-        st.info("👋 Selamat datang! Silakan unggah ketiga file master: penjualan, komplain, dan QA/QC.")
+    if not all([sales_file, complaint_file, qa_qc_file]):
+        st.info("👋 Selamat datang! Silakan unggah ketiga file master untuk memulai.")
         st.stop()
         
     df_sales = load_feather_file(sales_file)
     df_complaints = load_feather_file(complaint_file)
     df_qa_qc = load_feather_file(qa_qc_file)
     
-    if df_sales is None or df_complaints is None or df_qa_qc is None:
-        st.error("Gagal memuat salah satu file data."); st.stop()
-        
+    if df_sales is None or df_complaints is None or df_qa_qc is None: st.stop()
+
+    # Tampilkan pemetaan kolom jika belum dikonfirmasi
+    if not st.session_state.mapping_confirmed:
+        display_column_mapper(df_sales, df_complaints, df_qa_qc)
+        st.info("👈 Silakan konfigurasikan pemetaan kolom di sidebar, lalu klik 'Terapkan Pemetaan'.")
+        st.stop()
+
+    # Ambil mapping dari session state
+    mapping = st.session_state.column_mapping
+
+    # Pra-pemrosesan Data setelah mapping
+    try:
+        df_sales[mapping['sales_date']] = pd.to_datetime(df_sales[mapping['sales_date']])
+        df_complaints[mapping['complaint_date']] = pd.to_datetime(df_complaints[mapping['complaint_date']])
+        df_qa_qc[mapping['qa_date']] = pd.to_datetime(df_qa_qc[mapping['qa_date']])
+    except Exception as e:
+        st.error(f"Gagal mengonversi kolom tanggal. Pastikan kolom tanggal yang dipilih benar. Error: {e}")
+        st.stop()
+    
+    # Reset mapping jika pengguna ingin mengubah
+    if st.sidebar.button("Ubah Pemetaan Kolom"):
+        st.session_state.mapping_confirmed = False
+        st.rerun()
+
     st.sidebar.title("⚙️ Filter Global")
     ALL_BRANCHES_OPTION = "Semua Cabang (Gabungan)"
-    unique_branches = sorted([str(b) for b in df_sales['Branch'].unique() if pd.notna(b)])
+    unique_branches = sorted([str(b) for b in df_sales[mapping['branch']].unique() if pd.notna(b)])
     branch_options = [ALL_BRANCHES_OPTION] + unique_branches
     selected_branch = st.sidebar.selectbox("Pilih Cabang", branch_options)
     
-    min_date, max_date = df_sales['Sales Date'].min().date(), df_sales['Sales Date'].max().date()
+    min_date = df_sales[mapping['sales_date']].min().date()
+    max_date = df_sales[mapping['sales_date']].max().date()
     date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 
     if len(date_range) != 2: st.stop()
     start_date, end_date = date_range
 
-    date_mask_sales = (df_sales['Sales Date'].dt.date >= start_date) & (df_sales['Sales Date'].dt.date <= end_date)
+    # Pemfilteran Data
+    date_mask_sales = (df_sales[mapping['sales_date']].dt.date >= start_date) & (df_sales[mapping['sales_date']].dt.date <= end_date)
     df_sales_filtered = df_sales[date_mask_sales]
-    date_mask_complaints = (df_complaints['Sales Date'].dt.date >= start_date) & (df_complaints['Sales Date'].dt.date <= end_date)
+    date_mask_complaints = (df_complaints[mapping['complaint_date']].dt.date >= start_date) & (df_complaints[mapping['complaint_date']].dt.date <= end_date)
     df_complaints_filtered = df_complaints[date_mask_complaints]
-    date_mask_qa_qc = (df_qa_qc['Sales Date'].dt.date >= start_date) & (df_qa_qc['Sales Date'].dt.date <= end_date)
+    date_mask_qa_qc = (df_qa_qc[mapping['qa_date']].dt.date >= start_date) & (df_qa_qc[mapping['qa_date']].dt.date <= end_date)
     df_qa_qc_filtered = df_qa_qc[date_mask_qa_qc]
 
     if selected_branch != ALL_BRANCHES_OPTION:
-        df_sales_filtered = df_sales_filtered[df_sales_filtered['Branch'] == selected_branch]
-        df_complaints_filtered = df_complaints_filtered[df_complaints_filtered['Branch'] == selected_branch]
-        df_qa_qc_filtered = df_qa_qc_filtered[df_qa_qc_filtered['Branch'] == selected_branch]
+        df_sales_filtered = df_sales_filtered[df_sales_filtered[mapping['branch']] == selected_branch]
+        df_complaints_filtered = df_complaints_filtered[df_complaints_filtered[mapping['complaint_branch']] == selected_branch]
+        df_qa_qc_filtered = df_qa_qc_filtered[df_qa_qc_filtered[mapping['qa_branch']] == selected_branch]
 
     if df_sales_filtered.empty: st.warning("Tidak ada data penjualan untuk filter yang dipilih."); st.stop()
 
-    st.title(f"Dashboard Analisis Holistik: {selected_branch}")
+    st.title(f"Dasbor Analisis Holistik: {selected_branch}")
     st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
 
+    # Kalkulasi dan Tampilan Dashboard
     with st.spinner("Menganalisis data... 🤖"):
-        monthly_agg = analyze_monthly_trends(df_sales_filtered)
-        price_group_results = calculate_price_group_analysis(df_sales_filtered)
-        df_branch_health = calculate_branch_health(df_sales_filtered, df_complaints_filtered)
-        
-        # Jalankan kedua agent (menggunakan data lengkap untuk konteks historis)
-        # Simpan hasil ke session_state agar tidak dijalankan ulang terus-menerus
-        if 'op_agent_results' not in st.session_state:
-            st.session_state.op_agent_results = run_operational_agent(df_sales, df_complaints, df_qa_qc)
-        if 'strat_agent_results' not in st.session_state:
-             st.session_state.strat_agent_results = run_strategic_agent(df_sales, df_complaints, df_qa_qc)
+        monthly_agg = analyze_monthly_trends(df_sales_filtered, mapping)
+        price_group_results = calculate_price_group_analysis(df_sales_filtered, mapping)
+        df_branch_health = calculate_branch_health(df_sales_filtered, df_complaints_filtered, mapping)
+        op_agent_results = run_operational_agent(df_sales, df_complaints, df_qa_qc, mapping)
+        strat_agent_results = run_strategic_agent(df_sales, df_complaints, df_qa_qc, mapping)
     
     penjualan_tab, kualitas_tab, qa_qc_tab, agent_tab = st.tabs(["📈 Penjualan", "✅ Kualitas & Komplain", "⭐ Kepatuhan QA/QC", "🤖 AI Root Cause Agent"])
     
     with penjualan_tab:
-        st.header("Analisis Tren Performa Penjualan")
-        if monthly_agg is not None and not monthly_agg.empty:
-            display_monthly_kpis(monthly_agg)
-            st.markdown("---")
-            display_trend_chart_and_analysis(monthly_agg, 'TotalMonthlySales', 'Penjualan', 'royalblue')
-            display_trend_chart_and_analysis(monthly_agg, 'TotalTransactions', 'Transaksi', 'orange')
-            display_trend_chart_and_analysis(monthly_agg, 'AOV', 'AOV', 'green')
-        else:
-            st.warning("Data bulanan tidak cukup untuk analisis tren.")
+        display_monthly_kpis(monthly_agg) # Fungsi ini tidak perlu mapping
         st.markdown("---")
-        display_price_group_analysis(price_group_results)
+        # Fungsi ini juga tidak perlu mapping karena menerima data agregat
+        display_trend_chart_and_analysis(monthly_agg, 'TotalMonthlySales', 'Penjualan', 'royalblue')
+        display_trend_chart_and_analysis(monthly_agg, 'TotalTransactions', 'Transaksi', 'orange')
+        display_trend_chart_and_analysis(monthly_agg, 'AOV', 'AOV', 'green')
+        st.markdown("---")
+        display_price_group_analysis(price_group_results) # Tidak perlu mapping
 
     with kualitas_tab:
-        st.header("Analisis Kualitas Layanan dan Penanganan Komplain")
-        display_branch_health(df_branch_health)
+        display_branch_health(df_branch_health) # Tidak perlu mapping
         st.markdown("---")
-        display_complaint_analysis(df_complaints_filtered)
+        display_complaint_analysis(df_complaints_filtered, mapping)
         
     with qa_qc_tab:
-        st.header("Analisis Kepatuhan Standar Operasional")
-        display_qa_qc_analysis(df_qa_qc_filtered)
+        display_qa_qc_analysis(df_qa_qc_filtered, mapping)
         
     with agent_tab:
         st.header("Analisis Akar Masalah Otomatis oleh AI Agent")
-        
-        # --- [BARU] Tampilan Sub-Tab untuk Setiap Agent ---
         op_tab, strat_tab = st.tabs(["**⚡ Analisis Operasional (Mingguan)**", "**🎯 Analisis Strategis (3 Bulanan)**"])
-        
         with op_tab:
-            display_agent_analysis(
-                st.session_state.op_agent_results,
-                title="Diagnosis Taktis Jangka Pendek",
-                info_text="Agent ini menganalisis performa 7 hari terakhir untuk mendeteksi masalah yang membutuhkan reaksi cepat (quick response)."
-            )
-            
+            display_agent_analysis(op_agent_results, "Diagnosis Taktis Jangka Pendek", "Menganalisis performa 7 hari terakhir untuk deteksi cepat.")
         with strat_tab:
-            display_agent_analysis(
-                st.session_state.strat_agent_results,
-                title="Diagnosis Strategis Jangka Panjang",
-                info_text="Agent ini menganalisis tren bulanan (minimal 4 bulan) untuk mengidentifikasi pola fundamental dan mengevaluasi dampak strategi jangka panjang."
-            )
+            display_agent_analysis(strat_agent_results, "Diagnosis Strategis Jangka Panjang", "Menganalisis tren bulanan untuk evaluasi fundamental.")
 
 # ==============================================================================
 # LOGIKA AUTENTIKASI
