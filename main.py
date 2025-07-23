@@ -543,12 +543,14 @@ def main_app(user_name):
         display_branch_health(df_branch_health)
         st.markdown("---")
         display_complaint_analysis(df_complaints_filtered)
-        
+
     with qa_qc_tab:
         st.header("Analisis Kepatuhan Standar Operasional")
+        display_qa_qc_analysis(df_qa_qc_filtered)
 
     # --- KONTEN TAB BARU: AI AGENT ---
     with agent_tab:
+        st.header("Analisis Akar Masalah")
         display_agent_analysis(df_agent_results)
 
 # ==============================================================================
