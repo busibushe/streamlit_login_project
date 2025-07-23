@@ -340,7 +340,13 @@ def run_strategic_agent(df_sales, df_complaints, df_qa_qc):
         qa_qc_br = df_qa_qc[df_qa_qc['Branch'] == branch]
         
         # AOV perlu dihitung sbg mean bulanan, bukan sum
-        sales_br_monthly_aov = sales_br.set_index('Sales Date').resample('M').apply({'AOV': 'mean'}).reset_index()
+        # Tambahkan perhitungan AOV pada df_sales jika belum ada
+        if 'AOV' not in sales_br.columns:
+            bill_agg = sales_br.groupby('Bill Number').agg(NettSales=('Nett Sales', 'sum'), SalesDate=('Sales Date', 'first')).reset_index()
+            sales_br_monthly_aov = bill_agg.groupby(pd.Grouper(key='SalesDate', freq='M'))['NettSales'].mean().reset_index().rename(columns={'NettSales':'AOV', 'SalesDate':'Sales Date'})
+        else:
+            sales_br_monthly_aov = sales_br.groupby(pd.Grouper(key='Sales Date', freq='M'))['AOV'].mean().reset_index()
+
 
         status = {
             "sales": analyze_long_term_metric_status(sales_br, 'Sales Date', 'Nett Sales', 'sum'),
@@ -703,28 +709,23 @@ def old2_main_app(user_name):
 # ==============================================================================
 # APLIKASI UTAMA STREAMLIT
 # ==============================================================================
+# ==============================================================================
+# APLIKASI UTAMA STREAMLIT (VERSI FINAL)
+# ==============================================================================
 
 def main_app(user_name):
-    """
-    Fungsi utama yang menjalankan seluruh aplikasi dashboard,
-    dari unggah file hingga menampilkan semua analisis.
-    """
+    """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
 
-    # --------------------------------------------------------------------------
-    # Bagian 1: Sidebar - Autentikasi dan Unggah File
-    # --------------------------------------------------------------------------
+    # --- Bagian 1: Sidebar - Autentikasi dan Unggah File ---
     authenticator.logout("Logout", "sidebar")
     st.sidebar.success(f"Login sebagai: **{user_name}**")
     st.sidebar.title("📤 Unggah Data Master")
 
-    # UPLOAD TIGA FILE MASTER
     sales_file = st.sidebar.file_uploader("1. Unggah Penjualan Master (.feather)", type=["feather"])
     complaint_file = st.sidebar.file_uploader("2. Unggah Komplain Master (.feather)", type=["feather"])
     qa_qc_file = st.sidebar.file_uploader("3. Unggah QA/QC Master (.feather)", type=["feather"])
 
-    # --------------------------------------------------------------------------
-    # Bagian 2: Pemuatan Data
-    # --------------------------------------------------------------------------
+    # --- Bagian 2: Pemuatan Data ---
     if sales_file is None or complaint_file is None or qa_qc_file is None:
         st.info("👋 Selamat datang! Silakan unggah ketiga file master: penjualan, komplain, dan QA/QC.")
         st.stop()
@@ -737,14 +738,11 @@ def main_app(user_name):
         st.error("Gagal memuat salah satu dari tiga file data. Pastikan semua file terunggah.")
         st.stop()
         
-    # Simpan data ke session_state untuk efisiensi
     st.session_state.df_sales = df_sales
     st.session_state.df_complaints = df_complaints
     st.session_state.df_qa_qc = df_qa_qc
 
-    # --------------------------------------------------------------------------
-    # Bagian 3: Sidebar - Filter Global
-    # --------------------------------------------------------------------------
+    # --- Bagian 3: Sidebar - Filter Global ---
     st.sidebar.title("⚙️ Filter Global")
     
     ALL_BRANCHES_OPTION = "Semua Cabang (Gabungan)"
@@ -754,21 +752,12 @@ def main_app(user_name):
     
     min_date = df_sales['Sales Date'].min().date()
     max_date = df_sales['Sales Date'].max().date()
-    date_range = st.sidebar.date_input(
-        "Pilih Rentang Tanggal", 
-        value=(min_date, max_date), 
-        min_value=min_date, 
-        max_value=max_date  # Menggunakan argumen yang benar: max_value
-    )
+    date_range = st.sidebar.date_input("Pilih Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 
-    if len(date_range) != 2: 
-        st.stop()
+    if len(date_range) != 2: st.stop()
     start_date, end_date = date_range
 
-    # --------------------------------------------------------------------------
-    # Bagian 4: Pemfilteran Data
-    # --------------------------------------------------------------------------
-    # Menerapkan filter ke semua DataFrame
+    # --- Bagian 4: Pemfilteran Data ---
     date_mask_sales = (df_sales['Sales Date'].dt.date >= start_date) & (df_sales['Sales Date'].dt.date <= end_date)
     df_sales_filtered = df_sales[date_mask_sales]
     
@@ -790,22 +779,17 @@ def main_app(user_name):
     st.title(f"Dashboard Analisis Holistik: {selected_branch}")
     st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
 
-    # --------------------------------------------------------------------------
-    # Bagian 5: Kalkulasi Semua Analisis
-    # --------------------------------------------------------------------------
+    # --- Bagian 5: Kalkulasi Semua Analisis ---
     with st.spinner("Menjalankan semua analisis..."):
-        # Analisis untuk tab reguler (menggunakan data terfilter)
         monthly_agg = analyze_monthly_trends(df_sales_filtered)
         price_group_results = calculate_price_group_analysis(df_sales_filtered)
         df_branch_health = calculate_branch_health(df_sales_filtered, df_complaints_filtered)
         
-        # Analisis untuk AI Agent (menggunakan data lengkap untuk konteks historis)
+        # Jalankan kedua agent (menggunakan data lengkap untuk konteks historis)
         operational_agent_results = run_operational_agent(df_sales, df_complaints, df_qa_qc)
         strategic_agent_results = run_strategic_agent(df_sales, df_complaints, df_qa_qc)
     
-    # --------------------------------------------------------------------------
-    # Bagian 6: Tampilan Dashboard dengan Tab
-    # --------------------------------------------------------------------------
+    # --- Bagian 6: Tampilan Dashboard dengan Tab ---
     penjualan_tab, kualitas_tab, qa_qc_tab, agent_tab = st.tabs([
         "📈 **Performa Penjualan**", 
         "✅ **Kualitas & Komplain**",
@@ -822,7 +806,6 @@ def main_app(user_name):
             display_trend_chart_and_analysis(monthly_agg, 'AOV', 'AOV', 'green')
         else:
             st.warning("Data bulanan tidak cukup untuk analisis tren.")
-        
         st.markdown("---")
         display_price_group_analysis(price_group_results)
 
@@ -855,6 +838,7 @@ def main_app(user_name):
                 title="Diagnosis Strategis Jangka Panjang",
                 info_text="Agent ini menganalisis tren bulanan (minimal 4 bulan) untuk mengidentifikasi pola strategis dan mengevaluasi performa fundamental."
             )
+            
 # ==============================================================================
 # LOGIKA AUTENTIKASI
 # ==============================================================================
