@@ -84,7 +84,6 @@ def display_column_mapper(df_sales, df_complaints, df_qa_qc):
 # ==============================================================================
 # FUNGSI-FUNGSI ANALISIS & VISUALISASI (TELAH DIMODIFIKASI)
 # ==============================================================================
-
 def analyze_monthly_trends(df, mapping):
     df['Bulan'] = df[mapping['sales_date']].dt.to_period('M')
     monthly_agg = df.groupby('Bulan').agg(
@@ -169,7 +168,6 @@ def display_qa_qc_analysis(df_qa_qc, mapping):
     fig1 = px.line(df_qa_qc.sort_values(mapping['qa_date']), x=mapping['qa_date'], y=mapping['qa_score'], color=mapping['qa_branch'], markers=True, title="Tren Skor Kepatuhan per Audit")
     st.plotly_chart(fig1, use_container_width=True)
 
-# ... (Fungsi display_price_group_analysis, display_branch_health, dan display_trend_chart_and_analysis tidak perlu diubah) ...
 def display_price_group_analysis(analysis_results):
     st.subheader("📊 Analisis Kelompok Harga")
     if analysis_results is None or analysis_results.empty:
@@ -191,15 +189,114 @@ def display_branch_health(df_health):
     with col2:
         fig2 = px.bar(df_health, x='Branch', y='AvgResolutionTime', title="Rata-rata Waktu Penyelesaian Komplain (Jam)", color='AvgResolutionTime', color_continuous_scale='Oranges')
         st.plotly_chart(fig2, use_container_width=True)
-def display_trend_chart_and_analysis(df_data, y_col, y_label, color):
+def old_display_trend_chart_and_analysis(df_data, y_col, y_label, color):
     fig = px.line(df_data, x='Bulan', y=y_col, markers=True, labels={'Bulan': 'Bulan', y_col: y_label})
     fig.update_traces(line_color=color, name=y_label)
     st.plotly_chart(fig, use_container_width=True)
+def analyze_trend_v3(df_monthly, metric_col, metric_label):
+    """Menganalisis tren dengan wawasan bisnis F&B: Tren Linear, YoY, dan Momentum."""
+    # Pastikan data cukup untuk analisis
+    if df_monthly is None or len(df_monthly.dropna(subset=[metric_col])) < 3:
+        return {'narrative': f"Data {metric_label} tidak cukup untuk analisis tren (dibutuhkan minimal 3 bulan)."}
+    
+    df = df_monthly.dropna(subset=[metric_col]).copy()
+    
+    # Cek jika data konstan (tidak ada variasi)
+    if len(set(df[metric_col])) <= 1:
+        return {'narrative': f"Data {metric_label} konstan, tidak ada tren yang bisa dianalisis."}
 
+    # Analisis Tren Linear
+    df['x_val'] = np.arange(len(df))
+    slope, intercept, r_value, p_value, std_err = stats.linregress(df['x_val'], df[metric_col])
+    trendline = slope * df['x_val'] + intercept
+    
+    trend_type = "stabil/fluktuatif"
+    if p_value < 0.05: # Ambang batas signifikansi
+        trend_type = f"**{'meningkat' if slope > 0 else 'menurun'}** secara signifikan"
+
+    # Analisis Year-on-Year (YoY)
+    yoy_narrative = ""
+    if len(df) >= 13: # Butuh setidaknya 13 bulan untuk membandingkan dengan tahun lalu
+        last_val = df.iloc[-1][metric_col]
+        yoy_val = df.iloc[-13][metric_col]
+        if yoy_val > 0:
+            yoy_change = (last_val - yoy_val) / yoy_val
+            yoy_performance = f"**tumbuh {yoy_change:.1%}**" if yoy_change > 0 else f"**menurun {abs(yoy_change):.1%}**"
+            yoy_narrative = f" Dibandingkan bulan yang sama tahun lalu, performa bulan terakhir {yoy_performance}."
+
+    # Analisis Momentum (Moving Average)
+    ma_line, momentum_narrative = None, ""
+    if len(df) >= 4: # Butuh beberapa bulan untuk melihat momentum
+        ma_line = df[metric_col].rolling(window=3, min_periods=1).mean()
+        if ma_line.iloc[-1] > ma_line.iloc[-2]:
+            momentum_narrative = " Momentum jangka pendek (3 bulan terakhir) terlihat **positif**."
+        elif ma_line.iloc[-1] < ma_line.iloc[-2]:
+            momentum_narrative = " Momentum jangka pendek menunjukkan **perlambatan**."
+
+    # Analisis Titik Ekstrem
+    max_perf_month = df.loc[df[metric_col].idxmax()]
+    min_perf_month = df.loc[df[metric_col].idxmin()]
+    extrema_narrative = f" Performa tertinggi tercatat pada **{max_perf_month['Bulan'].strftime('%B %Y')}** dan terendah pada **{min_perf_month['Bulan'].strftime('%B %Y')}**."
+
+    # Gabungkan semua narasi
+    full_narrative = (f"Secara keseluruhan, tren {metric_label} cenderung {trend_type}."
+                      f"{momentum_narrative}{yoy_narrative}{extrema_narrative}")
+
+    return {
+        'narrative': full_narrative,
+        'trendline': trendline,
+        'ma_line': ma_line,
+        'p_value': p_value
+    }
+def display_trend_chart_and_analysis(df_data, y_col, y_label, color):
+    """Membuat grafik tren lengkap dengan garis tren, moving average, dan narasi analisis."""
+    st.subheader(f"📈 Analisis Tren: {y_label}")
+    
+    # Panggil fungsi analisis baru
+    analysis_result = analyze_trend_v3(df_data, y_col, y_label)
+
+    # Buat grafik dasar
+    fig = px.line(df_data, x='Bulan', y=y_col, markers=True, labels={'Bulan': 'Bulan', y_col: y_label})
+    fig.update_traces(line_color=color, name=y_label)
+
+    # Tambahkan Garis Tren (jika ada)
+    if analysis_result.get('trendline') is not None:
+        fig.add_scatter(
+            x=df_data['Bulan'], 
+            y=analysis_result['trendline'], 
+            mode='lines', 
+            name='Garis Tren', 
+            line=dict(color='firebrick', dash='dash')
+        )
+
+    # Tambahkan Garis Moving Average (jika ada)
+    if analysis_result.get('ma_line') is not None:
+        fig.add_scatter(
+            x=df_data['Bulan'], 
+            y=analysis_result['ma_line'], 
+            mode='lines', 
+            name='Momentum (3-Bulan)', 
+            line=dict(color='orange', dash='dot')
+        )
+    
+    # Tampilkan grafik dan narasi
+    st.plotly_chart(fig, use_container_width=True)
+    st.info(f"💡 **Ringkasan Analisis:** {analysis_result.get('narrative', 'Analisis tidak tersedia.')}")
+    
+    # Tambahkan penjelasan statistik
+    p_value = analysis_result.get('p_value')
+    if p_value is not None:
+        with st.expander("Lihat penjelasan signifikansi statistik (p-value)"):
+            st.markdown(f"**Nilai p-value** untuk garis tren ini adalah **`{p_value:.4f}`**.")
+            st.markdown(f"Ini berarti ada **`{p_value:.2%}`** kemungkinan melihat pola ini hanya karena faktor kebetulan.")
+            if p_value < 0.05:
+                st.success("✔️ Karena kemungkinan kebetulan rendah (< 5%), tren ini dianggap **nyata secara statistik**.")
+            else:
+                st.warning("⚠️ Karena kemungkinan kebetulan cukup tinggi (≥ 5%), tren ini **tidak signifikan secara statistik** dan mungkin hanya fluktuasi acak.")
+    st.markdown("---")
 # ==============================================================================
 # FUNGSI-FUNGSI AGENT AI (TELAH DIMODIFIKASI)
 # ==============================================================================
-
 def run_operational_agent(df_sales, df_complaints, df_qa_qc, mapping):
     all_branches = sorted([str(b) for b in df_sales[mapping['branch']].unique() if pd.notna(b)])
     knowledge_base = get_operational_knowledge_base()
@@ -253,8 +350,6 @@ def run_strategic_agent(df_sales, df_complaints, df_qa_qc, mapping):
         results.append({"Toko": branch, "Tren Penjualan": status["sales"], "Tren Transaksi": status["transactions"], "Tren AOV": status["aov"], "Skor QA/QC": status["qa_qc"], "Tren Komplain": status["complaints"], "Analisis & Kemungkinan Akar Masalah": ", ".join(causes) if causes else "Tidak ada pola strategis signifikan."})
     return pd.DataFrame(results)
 
-# (Fungsi analyze_short_term_metric_status, get_operational_knowledge_base, analyze_long_term_metric_status, get_strategic_knowledge_base, display_agent_analysis tidak perlu diubah)
-# Pastikan fungsi-fungsi ini ada di kode Anda dari versi sebelumnya.
 def analyze_short_term_metric_status(df, date_col, metric_col):
     """Menganalisis tren 7 hari vs 7 hari sebelumnya untuk deteksi dini."""
     if df is None or df.empty or metric_col not in df.columns or len(df.dropna(subset=[metric_col])) < 14:
