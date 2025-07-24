@@ -81,10 +81,9 @@ def display_monthly_kpis(monthly_agg):
 
     help_str = f"Dibandingkan {prev_month['Bulan'].strftime('%b %Y')}" if prev_month is not None else ""
     display_kpi(kpi_cols[0], "💰 Penjualan Bulanan", last_month.get('TotalMonthlySales', 0), prev_month.get('TotalMonthlySales') if prev_month is not None else None, help_str, True)
+    display_kpi(kpi_cols[3], "📅 Rata-rata Penjualan Harian", last_month.get('RataRataPenjualanHarian', 0), prev_month.get('RataRataPenjualanHarian') if prev_month is not None else None, help_str, True)
     display_kpi(kpi_cols[1], "🛒 Transaksi Bulanan", last_month.get('TotalTransactions', 0), prev_month.get('TotalTransactions') if prev_month is not None else None, help_str, False)
     display_kpi(kpi_cols[2], "💳 AOV Bulanan", last_month.get('AOV', 0), prev_month.get('AOV') if prev_month is not None else None, help_str, True)
-    # <<< BARU >>> Menambahkan KPI Rata-rata Penjualan Harian
-    display_kpi(kpi_cols[3], "📅 Rata-rata Penjualan Harian", last_month.get('RataRataPenjualanHarian', 0), prev_month.get('RataRataPenjualanHarian') if prev_month is not None else None, help_str, True)
 
 def display_trend_chart_and_analysis(df_data, y_col, y_label, color):
     fig = px.line(df_data, x='Bulan', y=y_col, markers=True, labels={'Bulan': 'Bulan', y_col: y_label})
