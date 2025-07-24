@@ -7,7 +7,6 @@ import numpy as np
 import scipy.stats as stats
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-# from sklearn.cluster import KMeans # <<< DIHAPUS (tidak lagi dibutuhkan)
 
 # ==============================================================================
 # KONFIGURASI APLIKASI
@@ -39,8 +38,6 @@ def load_feather_file(uploaded_file):
 # FUNGSI-FUNGSI ANALISIS & VISUALISASI
 # ==============================================================================
 
-# <<< DIMODIFIKASI >>>
-# Fungsi ini sekarang juga menghitung Rata-rata Penjualan Harian
 def analyze_monthly_trends(df_filtered):
     """Menganalisis tren bulanan, termasuk total penjualan, transaksi, AOV, dan rata-rata penjualan harian."""
     monthly_df = df_filtered.copy()
@@ -57,8 +54,7 @@ def analyze_monthly_trends(df_filtered):
             axis=1
         )
         
-        # <<< BARU >>> Hitung Rata-rata Penjualan Harian
-        # Ubah 'Bulan' (Period) menjadi timestamp untuk mendapatkan jumlah hari dalam bulan itu
+        # Hitung Rata-rata Penjualan Harian
         timestamp_bulan = monthly_agg['Bulan'].dt.to_timestamp()
         monthly_agg['RataRataPenjualanHarian'] = monthly_agg['TotalMonthlySales'] / timestamp_bulan.dt.days_in_month
 
@@ -67,10 +63,12 @@ def analyze_monthly_trends(df_filtered):
 
     return monthly_agg
 
-
+# <<< DIMODIFIKASI >>>
+# Fungsi ini sekarang menampilkan 4 KPI
 def display_monthly_kpis(monthly_agg):
+    """Menampilkan metriks KPI utama: Penjualan, Transaksi, AOV, dan Rata-rata Penjualan Harian."""
     if len(monthly_agg) < 1: return
-    kpi_cols = st.columns(3)
+    kpi_cols = st.columns(4) # Menggunakan 4 kolom untuk KPI
     last_month = monthly_agg.iloc[-1]
     prev_month = monthly_agg.iloc[-2] if len(monthly_agg) >= 2 else None
 
@@ -85,16 +83,13 @@ def display_monthly_kpis(monthly_agg):
     display_kpi(kpi_cols[0], "💰 Penjualan Bulanan", last_month.get('TotalMonthlySales', 0), prev_month.get('TotalMonthlySales') if prev_month is not None else None, help_str, True)
     display_kpi(kpi_cols[1], "🛒 Transaksi Bulanan", last_month.get('TotalTransactions', 0), prev_month.get('TotalTransactions') if prev_month is not None else None, help_str, False)
     display_kpi(kpi_cols[2], "💳 AOV Bulanan", last_month.get('AOV', 0), prev_month.get('AOV') if prev_month is not None else None, help_str, True)
+    # <<< BARU >>> Menambahkan KPI Rata-rata Penjualan Harian
+    display_kpi(kpi_cols[3], "📅 Rata-rata Penjualan Harian", last_month.get('RataRataPenjualanHarian', 0), prev_month.get('RataRataPenjualanHarian') if prev_month is not None else None, help_str, True)
 
 def display_trend_chart_and_analysis(df_data, y_col, y_label, color):
     fig = px.line(df_data, x='Bulan', y=y_col, markers=True, labels={'Bulan': 'Bulan', y_col: y_label})
     fig.update_traces(line_color=color, name=y_label)
     st.plotly_chart(fig, use_container_width=True)
-
-# <<< DIHAPUS >>>
-# Fungsi 'calculate_price_group_analysis' dan 'display_price_group_analysis' telah dihapus.
-# def calculate_price_group_analysis(df): ...
-# def display_price_group_analysis(analysis_results): ...
 
 def calculate_branch_health(df_sales, df_complaints):
     sales_agg = df_sales.groupby('Branch').agg(TotalSales=('Nett Sales', 'sum'), TotalTransactions=('Bill Number', 'nunique')).reset_index()
@@ -335,8 +330,6 @@ def main_app(user_name):
 
     with st.spinner("Menganalisis data... 🤖"):
         monthly_agg = analyze_monthly_trends(df_sales_filtered)
-        # <<< DIHAPUS >>> Panggilan fungsi untuk analisis kelompok harga
-        # price_group_results = calculate_price_group_analysis(df_sales_filtered) 
         df_branch_health = calculate_branch_health(df_sales_filtered, df_complaints_filtered)
         
         # Jalankan kedua agent (menggunakan data lengkap untuk konteks historis)
@@ -353,19 +346,13 @@ def main_app(user_name):
         if monthly_agg is not None and not monthly_agg.empty:
             display_monthly_kpis(monthly_agg)
             st.markdown("---")
-            # <<< DIMODIFIKASI >>> Menampilkan grafik-grafik tren
             display_trend_chart_and_analysis(monthly_agg, 'TotalMonthlySales', 'Total Penjualan Bulanan', 'royalblue')
-            # <<< BARU >>> Menampilkan grafik Rata-rata Penjualan Harian
             display_trend_chart_and_analysis(monthly_agg, 'RataRataPenjualanHarian', 'Rata-rata Penjualan Harian (per Bulan)', 'purple')
             display_trend_chart_and_analysis(monthly_agg, 'TotalTransactions', 'Total Transaksi Bulanan', 'orange')
             display_trend_chart_and_analysis(monthly_agg, 'AOV', 'Rata-rata Nilai Pesanan (AOV)', 'green')
         else:
             st.warning("Data bulanan tidak cukup untuk analisis tren.")
         
-        # <<< DIHAPUS >>> Tampilan analisis kelompok harga
-        # st.markdown("---")
-        # display_price_group_analysis(price_group_results)
-
     with kualitas_tab:
         st.header("Analisis Kualitas Layanan dan Penanganan Komplain")
         display_branch_health(df_branch_health)
