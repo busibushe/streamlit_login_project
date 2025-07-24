@@ -63,10 +63,8 @@ def analyze_monthly_trends(df_filtered):
 
     return monthly_agg
 
-# <<< DIMODIFIKASI >>>
-# Fungsi ini sekarang menampilkan 4 KPI
 def display_monthly_kpis(monthly_agg):
-    """Menampilkan metriks KPI utama: Penjualan, Transaksi, AOV, dan Rata-rata Penjualan Harian."""
+    """Menampilkan metriks KPI utama: Penjualan, Rata-rata Harian, Transaksi, dan AOV."""
     if len(monthly_agg) < 1: return
     kpi_cols = st.columns(4) # Menggunakan 4 kolom untuk KPI
     last_month = monthly_agg.iloc[-1]
@@ -80,11 +78,18 @@ def display_monthly_kpis(monthly_agg):
         col.metric(title, val_format, f"{delta:.1%}" if delta is not None else None, help=help_text if delta is not None else None)
 
     help_str = f"Dibandingkan {prev_month['Bulan'].strftime('%b %Y')}" if prev_month is not None else ""
+    
+    # 1. KPI Penjualan Bulanan (Total Sales)
     display_kpi(kpi_cols[0], "💰 Penjualan Bulanan", last_month.get('TotalMonthlySales', 0), prev_month.get('TotalMonthlySales') if prev_month is not None else None, help_str, True)
-    display_kpi(kpi_cols[3], "📅 Rata-rata Penjualan Harian", last_month.get('RataRataPenjualanHarian', 0), prev_month.get('RataRataPenjualanHarian') if prev_month is not None else None, help_str, True)
-    display_kpi(kpi_cols[1], "🛒 Transaksi Bulanan", last_month.get('TotalTransactions', 0), prev_month.get('TotalTransactions') if prev_month is not None else None, help_str, False)
-    display_kpi(kpi_cols[2], "💳 AOV Bulanan", last_month.get('AOV', 0), prev_month.get('AOV') if prev_month is not None else None, help_str, True)
-
+    
+    # 2. KPI Rata-rata Penjualan Harian (Daily Sales) - Dipindahkan ke urutan kedua
+    display_kpi(kpi_cols[1], "📅 Rata-rata Penjualan Harian", last_month.get('RataRataPenjualanHarian', 0), prev_month.get('RataRataPenjualanHarian') if prev_month is not None else None, help_str, True)
+    
+    # 3. KPI Transaksi Bulanan
+    display_kpi(kpi_cols[2], "🛒 Transaksi Bulanan", last_month.get('TotalTransactions', 0), prev_month.get('TotalTransactions') if prev_month is not None else None, help_str, False)
+    
+    # 4. KPI AOV Bulanan
+    display_kpi(kpi_cols[3], "💳 AOV Bulanan", last_month.get('AOV', 0), prev_month.get('AOV') if prev_month is not None else None, help_str, True)
 def display_trend_chart_and_analysis(df_data, y_col, y_label, color):
     fig = px.line(df_data, x='Bulan', y=y_col, markers=True, labels={'Bulan': 'Bulan', y_col: y_label})
     fig.update_traces(line_color=color, name=y_label)
