@@ -7,7 +7,7 @@ import numpy as np
 import scipy.stats as stats
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-from sklearn.cluster import KMeans
+# from sklearn.cluster import KMeans # <<< DIHAPUS (tidak lagi dibutuhkan)
 
 # ==============================================================================
 # KONFIGURASI APLIKASI
@@ -36,10 +36,13 @@ def load_feather_file(uploaded_file):
         return None
 
 # ==============================================================================
-# FUNGSI-FUNGSI ANALISIS & VISUALISASI (Tidak Berubah)
+# FUNGSI-FUNGSI ANALISIS & VISUALISASI
 # ==============================================================================
 
+# <<< DIMODIFIKASI >>>
+# Fungsi ini sekarang juga menghitung Rata-rata Penjualan Harian
 def analyze_monthly_trends(df_filtered):
+    """Menganalisis tren bulanan, termasuk total penjualan, transaksi, AOV, dan rata-rata penjualan harian."""
     monthly_df = df_filtered.copy()
     monthly_df['Bulan'] = monthly_df['Sales Date'].dt.to_period('M')
     monthly_agg = monthly_df.groupby('Bulan').agg(
@@ -48,12 +51,22 @@ def analyze_monthly_trends(df_filtered):
     ).reset_index()
 
     if not monthly_agg.empty:
+        # Hitung AOV (Average Order Value)
         monthly_agg['AOV'] = monthly_agg.apply(
             lambda row: row['TotalMonthlySales'] / row['TotalTransactions'] if row['TotalTransactions'] > 0 else 0,
             axis=1
         )
+        
+        # <<< BARU >>> Hitung Rata-rata Penjualan Harian
+        # Ubah 'Bulan' (Period) menjadi timestamp untuk mendapatkan jumlah hari dalam bulan itu
+        timestamp_bulan = monthly_agg['Bulan'].dt.to_timestamp()
+        monthly_agg['RataRataPenjualanHarian'] = monthly_agg['TotalMonthlySales'] / timestamp_bulan.dt.days_in_month
+
+        # Konversi kolom Bulan ke format timestamp untuk plotting
         monthly_agg['Bulan'] = monthly_agg['Bulan'].dt.to_timestamp()
+
     return monthly_agg
+
 
 def display_monthly_kpis(monthly_agg):
     if len(monthly_agg) < 1: return
@@ -78,39 +91,10 @@ def display_trend_chart_and_analysis(df_data, y_col, y_label, color):
     fig.update_traces(line_color=color, name=y_label)
     st.plotly_chart(fig, use_container_width=True)
 
-def calculate_price_group_analysis(df):
-    if 'Menu' not in df.columns or 'Nett Sales' not in df.columns or 'Qty' not in df.columns: return None
-    menu_prices = df.groupby('Menu').agg(TotalSales=('Nett Sales', 'sum'), TotalQty=('Qty', 'sum')).reset_index()
-    menu_prices = menu_prices[menu_prices['TotalQty'] > 0]
-    menu_prices['AvgPrice'] = menu_prices['TotalSales'] / menu_prices['TotalQty']
-    if len(menu_prices) < 4: return None
-    kmeans = KMeans(n_clusters=4, random_state=42, n_init='auto')
-    menu_prices['PriceGroupLabel'] = kmeans.fit_predict(menu_prices[['AvgPrice']])
-    cluster_centers = menu_prices.groupby('PriceGroupLabel')['AvgPrice'].mean().sort_values().index
-    label_mapping = {center: f"Kelompok {i+1}" for i, center in enumerate(cluster_centers)}
-    menu_prices['PriceGroup'] = menu_prices['PriceGroupLabel'].map(label_mapping)
-    price_order = [" (Termurah)", " (Menengah)", " (Mahal)", " (Termahal)"]
-    sorted_groups = menu_prices.groupby('PriceGroup')['AvgPrice'].mean().sort_values().index
-    final_label_map = {group: group + price_order[i] for i, group in enumerate(sorted_groups)}
-    menu_prices['PriceGroup'] = menu_prices['PriceGroup'].map(final_label_map)
-    df_with_groups = pd.merge(df, menu_prices[['Menu', 'PriceGroup']], on='Menu', how='left')
-    group_performance = df_with_groups.groupby('PriceGroup').agg(TotalSales=('Nett Sales', 'sum'), TotalQty=('Qty', 'sum')).reset_index()
-    group_performance['sort_order'] = group_performance['PriceGroup'].str.extract('(\\d+)').astype(int)
-    group_performance = group_performance.sort_values('sort_order').drop(columns='sort_order')
-    return group_performance
-
-def display_price_group_analysis(analysis_results):
-    st.subheader("📊 Analisis Kelompok Harga")
-    if analysis_results is None or analysis_results.empty:
-        st.warning("Data tidak cukup untuk analisis kelompok harga.")
-        return
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(go.Bar(x=analysis_results['PriceGroup'], y=analysis_results['TotalSales'], name='Total Penjualan', marker_color='royalblue'), secondary_y=False)
-    fig.add_trace(go.Scatter(x=analysis_results['PriceGroup'], y=analysis_results['TotalQty'], name='Total Kuantitas', mode='lines+markers', line=dict(color='darkorange')), secondary_y=True)
-    fig.update_layout(title_text="Kontribusi Penjualan vs. Kuantitas per Kelompok Harga", xaxis_title="Kelompok Harga", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-    fig.update_yaxes(title_text="<b>Total Penjualan (Rp)</b>", secondary_y=False)
-    fig.update_yaxes(title_text="<b>Total Kuantitas Terjual</b>", secondary_y=True)
-    st.plotly_chart(fig, use_container_width=True)
+# <<< DIHAPUS >>>
+# Fungsi 'calculate_price_group_analysis' dan 'display_price_group_analysis' telah dihapus.
+# def calculate_price_group_analysis(df): ...
+# def display_price_group_analysis(analysis_results): ...
 
 def calculate_branch_health(df_sales, df_complaints):
     sales_agg = df_sales.groupby('Branch').agg(TotalSales=('Nett Sales', 'sum'), TotalTransactions=('Bill Number', 'nunique')).reset_index()
@@ -164,25 +148,18 @@ def display_qa_qc_analysis(df_qa_qc):
     st.plotly_chart(fig2, use_container_width=True)
 
 # ==============================================================================
-# FUNGSI-FUNGSI UNTUK AGENTIC AI ROOT CAUSE ANALYSIS
+# FUNGSI-FUNGSI UNTUK AGENTIC AI ROOT CAUSE ANALYSIS (Tidak Berubah)
 # ==============================================================================
-
 # --- A. FUNGSI UNTUK AGENT OPERASIONAL (JANGKA PENDEK / MINGGUAN) ---
-
 def analyze_short_term_metric_status(df, date_col, metric_col):
-    """Menganalisis tren 7 hari vs 7 hari sebelumnya untuk deteksi dini."""
     if df is None or df.empty or metric_col not in df.columns or len(df.dropna(subset=[metric_col])) < 14:
         return "FLUKTUATIF"
-    
     df = df.sort_values(date_col).dropna(subset=[metric_col])
     last_7_days_avg = df.tail(7)[metric_col].mean()
     previous_7_days_avg = df.iloc[-14:-7][metric_col].mean()
-
     if previous_7_days_avg == 0:
         return "MENINGKAT TAJAM" if last_7_days_avg > 0 else "STABIL"
-        
     change_percent = (last_7_days_avg - previous_7_days_avg) / previous_7_days_avg
-    
     if change_percent > 0.20: return "MENINGKAT TAJAM"
     if change_percent > 0.07: return "MENINGKAT"
     if change_percent < -0.20: return "MENURUN TAJAM"
@@ -190,7 +167,6 @@ def analyze_short_term_metric_status(df, date_col, metric_col):
     return "STABIL"
 
 def get_operational_knowledge_base():
-    """Aturan untuk masalah jangka pendek yang butuh reaksi cepat."""
     return [
         {"condition": lambda s: s["sales"] in ["MENURUN", "MENURUN TAJAM"], "root_cause": "Penurunan traffic atau masalah operasional mendadak minggu ini."},
         {"condition": lambda s: s["complaints"] in ["MENINGKAT", "MENINGKAT TAJAM"], "root_cause": "Terjadi insiden layanan atau masalah kualitas produk baru-baru ini."},
@@ -200,27 +176,20 @@ def get_operational_knowledge_base():
     ]
 
 def run_operational_agent(df_sales, df_complaints, df_qa_qc):
-    """Menjalankan agent untuk analisis operasional (jangka pendek)."""
     all_branches = sorted([str(b) for b in df_sales['Branch'].unique() if pd.notna(b)])
     knowledge_base = get_operational_knowledge_base()
     results = []
-
     for branch in all_branches:
         sales_br = df_sales[df_sales['Branch'] == branch]
         complaints_br = df_complaints[df_complaints['Branch'] == branch]
         qa_qc_br = df_qa_qc[df_qa_qc['Branch'] == branch]
-        
-        # Agregasi data harian
         daily_sales = sales_br.groupby(pd.Grouper(key='Sales Date', freq='D')).agg(DailySales=('Nett Sales', 'sum'), Transactions=('Bill Number', 'nunique')).reset_index()
         daily_sales['AOV'] = (daily_sales['DailySales'] / daily_sales['Transactions']).fillna(0)
         daily_complaints = complaints_br.groupby(pd.Grouper(key='Sales Date', freq='D')).size().reset_index(name='Complaints')
-        
-        # Cek skor QA/QC terakhir
         last_qa_qc_status = "BAIK"
         if not qa_qc_br.empty:
             last_audit_score = qa_qc_br.sort_values('Sales Date').iloc[-1]['Skor Kepatuhan']
             if last_audit_score < 75: last_qa_qc_status = "RENDAH"
-
         status = {
             "sales": analyze_short_term_metric_status(daily_sales, 'Sales Date', 'DailySales'),
             "transactions": analyze_short_term_metric_status(daily_sales, 'Sales Date', 'Transactions'),
@@ -228,22 +197,18 @@ def run_operational_agent(df_sales, df_complaints, df_qa_qc):
             "complaints": analyze_short_term_metric_status(daily_complaints, 'Sales Date', 'Complaints'),
             "qa_qc": last_qa_qc_status
         }
-        
         causes = {rule["root_cause"] for rule in knowledge_base if rule["condition"](status)}
         results.append({"Toko": branch, "Penjualan (7d)": status["sales"], "Transaksi (7d)": status["transactions"], "AOV (7d)": status["aov"], "Komplain (7d)": status["complaints"], "Audit Terakhir": status["qa_qc"], "Analisis Operasional": ", ".join(causes) if causes else "Performa operasional stabil."})
-    
     return pd.DataFrame(results)
 
 # --- B. FUNGSI UNTUK AGENT STRATEGIS (JANGKA PANJANG / 3-BULANAN) ---
-
 def analyze_long_term_metric_status(df, date_col, metric_col, agg_method='sum'):
-    """Menganalisis tren bulanan (min 4 bulan) menggunakan regresi linear."""
     if df is None or df.empty or metric_col not in df.columns: return "TIDAK CUKUP DATA"
-    df_resampled = df.set_index(date_col).resample('M')
-    if agg_method == 'sum': monthly_df = df_resampled[metric_col].sum().reset_index()
-    elif agg_method == 'mean': monthly_df = df_resampled[metric_col].mean().reset_index()
-    elif agg_method == 'nunique': monthly_df = df_resampled[metric_col].nunique().reset_index()
-    else: monthly_df = df_resampled.size().reset_index(name=metric_col)
+    if agg_method == 'sum': df_resampled = df.set_index(date_col).resample('M')[metric_col].sum().reset_index()
+    elif agg_method == 'mean': df_resampled = df.set_index(date_col).resample('M')[metric_col].mean().reset_index()
+    elif agg_method == 'nunique': df_resampled = df.set_index(date_col).resample('M')[metric_col].nunique().reset_index()
+    else: df_resampled = df.set_index(date_col).resample('M').size().reset_index(name=metric_col)
+    monthly_df = df_resampled
     if len(monthly_df) < 4: return "DATA < 4 BULAN"
     monthly_df['x'] = np.arange(len(monthly_df))
     slope, _, _, p_value, _ = stats.linregress(monthly_df['x'], monthly_df[metric_col].fillna(0))
@@ -262,7 +227,6 @@ def analyze_long_term_metric_status(df, date_col, metric_col, agg_method='sum'):
     return f"{trend_status}{momentum_status}"
 
 def get_strategic_knowledge_base():
-    """Basis pengetahuan dari tabel untuk analisis jangka panjang."""
     return [
         {"condition": lambda s: "TREN MENURUN" in s["sales"] and "TREN MENINGKAT" in s["complaints"], "root_cause": "Layanan buruk menggerus loyalitas pelanggan (Bad service causing churn)."},
         {"condition": lambda s: "TREN MENURUN" in s["sales"] and "RENDAH" in s["qa_qc"], "root_cause": "Operasional buruk berdampak negatif pada penjualan (Poor operations hurting loyalty)."},
@@ -274,7 +238,6 @@ def get_strategic_knowledge_base():
     ]
 
 def run_strategic_agent(df_sales, df_complaints, df_qa_qc):
-    """Menjalankan agent untuk analisis strategis (jangka panjang)."""
     all_branches = sorted([str(b) for b in df_sales['Branch'].unique() if pd.notna(b)])
     knowledge_base = get_strategic_knowledge_base()
     results = []
@@ -302,21 +265,16 @@ def run_strategic_agent(df_sales, df_complaints, df_qa_qc):
     return pd.DataFrame(results)
 
 # --- C. FUNGSI DISPLAY UNIVERSAL ---
-
 def display_agent_analysis(df_analysis, title, info_text):
-    """Menampilkan hasil analisis dari AI Agent dalam bentuk tabel."""
     st.header(title)
     st.info(info_text)
-    
     def style_status(val):
         color = "grey"
         if isinstance(val, str):
             if any(keyword in val for keyword in ["MENINGKAT", "TINGGI", "POSITIF", "BAIK"]): color = "#2ca02c"
             if any(keyword in val for keyword in ["MENURUN", "RENDAH", "NEGATIF"]): color = "#d62728"
         return f'color: {color}'
-        
     df_display = df_analysis.set_index('Toko')
-    # Temukan kolom terakhir untuk dikecualikan dari styling
     last_column_name = df_display.columns[-1]
     styled_df = df_display.style.apply(lambda col: col.map(style_status), subset=pd.IndexSlice[:, df_display.columns != last_column_name])
     st.dataframe(styled_df, use_container_width=True)
@@ -326,7 +284,6 @@ def display_agent_analysis(df_analysis, title, info_text):
 # ==============================================================================
 def main_app(user_name):
     """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
-
     if 'authenticator' in globals() and 'name' in st.session_state and st.session_state.name:
       authenticator.logout("Logout", "sidebar")
       st.sidebar.success(f"Login sebagai: **{user_name}**")
@@ -378,7 +335,8 @@ def main_app(user_name):
 
     with st.spinner("Menganalisis data... 🤖"):
         monthly_agg = analyze_monthly_trends(df_sales_filtered)
-        price_group_results = calculate_price_group_analysis(df_sales_filtered)
+        # <<< DIHAPUS >>> Panggilan fungsi untuk analisis kelompok harga
+        # price_group_results = calculate_price_group_analysis(df_sales_filtered) 
         df_branch_health = calculate_branch_health(df_sales_filtered, df_complaints_filtered)
         
         # Jalankan kedua agent (menggunakan data lengkap untuk konteks historis)
@@ -395,13 +353,18 @@ def main_app(user_name):
         if monthly_agg is not None and not monthly_agg.empty:
             display_monthly_kpis(monthly_agg)
             st.markdown("---")
-            display_trend_chart_and_analysis(monthly_agg, 'TotalMonthlySales', 'Penjualan', 'royalblue')
-            display_trend_chart_and_analysis(monthly_agg, 'TotalTransactions', 'Transaksi', 'orange')
-            display_trend_chart_and_analysis(monthly_agg, 'AOV', 'AOV', 'green')
+            # <<< DIMODIFIKASI >>> Menampilkan grafik-grafik tren
+            display_trend_chart_and_analysis(monthly_agg, 'TotalMonthlySales', 'Total Penjualan Bulanan', 'royalblue')
+            # <<< BARU >>> Menampilkan grafik Rata-rata Penjualan Harian
+            display_trend_chart_and_analysis(monthly_agg, 'RataRataPenjualanHarian', 'Rata-rata Penjualan Harian (per Bulan)', 'purple')
+            display_trend_chart_and_analysis(monthly_agg, 'TotalTransactions', 'Total Transaksi Bulanan', 'orange')
+            display_trend_chart_and_analysis(monthly_agg, 'AOV', 'Rata-rata Nilai Pesanan (AOV)', 'green')
         else:
             st.warning("Data bulanan tidak cukup untuk analisis tren.")
-        st.markdown("---")
-        display_price_group_analysis(price_group_results)
+        
+        # <<< DIHAPUS >>> Tampilan analisis kelompok harga
+        # st.markdown("---")
+        # display_price_group_analysis(price_group_results)
 
     with kualitas_tab:
         st.header("Analisis Kualitas Layanan dan Penanganan Komplain")
@@ -416,7 +379,6 @@ def main_app(user_name):
     with agent_tab:
         st.header("Analisis Akar Masalah Otomatis oleh AI Agent")
         
-        # --- [BARU] Tampilan Sub-Tab untuk Setiap Agent ---
         op_tab, strat_tab = st.tabs(["**⚡ Analisis Operasional (Mingguan)**", "**🎯 Analisis Strategis (3 Bulanan)**"])
         
         with op_tab:
