@@ -34,6 +34,21 @@ def load_feather_file(uploaded_file):
         st.error(f"Gagal memuat file Feather: {e}")
         return None
 
+# @st.cache_data(ttl=600)
+# def load_qa_qc_from_gsheet(url):
+#     """Memuat data mentah QA/QC dari URL Google Sheets."""
+#     if not url or "docs.google.com" not in url:
+#         st.warning("URL Google Sheet QA/QC tidak valid.")
+#         return pd.DataFrame()
+#     try:
+#         url = url.replace("/edit?gid=", "/export?format=csv&gid=").replace("/edit#gid=", "/export?format=csv&gid=")
+#         df = pd.read_csv(url)
+#         df.columns = df.columns.str.strip()
+#         return df
+#     except Exception as e:
+#         st.error(f"Gagal memuat data dari Google Sheets. Pastikan URL benar dan sheet di-share 'Anyone with the link'. Error: {e}")
+#         return pd.DataFrame()
+
 @st.cache_data(ttl=600)
 def load_qa_qc_from_gsheet(url):
     """Memuat data mentah QA/QC dari URL Google Sheets."""
@@ -42,7 +57,11 @@ def load_qa_qc_from_gsheet(url):
         return pd.DataFrame()
     try:
         url = url.replace("/edit?gid=", "/export?format=csv&gid=").replace("/edit#gid=", "/export?format=csv&gid=")
-        df = pd.read_csv(url)
+        
+        # --- PERUBAHAN DI SINI ---
+        # Menambahkan on_bad_lines='warn' untuk menangani baris yang error
+        df = pd.read_csv(url, on_bad_lines='warn') 
+        
         df.columns = df.columns.str.strip()
         return df
     except Exception as e:
