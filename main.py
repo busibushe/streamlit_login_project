@@ -354,7 +354,9 @@ def display_agent_analysis(df_analysis, title, info_text):
 def main_app(user_name):
     """Fungsi utama yang menjalankan seluruh aplikasi dashboard."""
     if 'authenticator' in globals() and 'name' in st.session_state and st.session_state.name:
-        authenticator.logout("Logout", "sidebar")
+        # authenticator.logout("Logout", "sidebar")
+        # Kode BARU yang sudah diperbaiki
+        authenticator.logout("Logout", "sidebar", key='unique_logout_button')
         st.sidebar.success(f"Login sebagai: **{user_name}**")
 
     st.sidebar.title("📤 Sumber Data")
