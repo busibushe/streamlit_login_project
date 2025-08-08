@@ -19,12 +19,12 @@ st.set_page_config(
 
 # ==============================================================================
 # 2. SEMUA FUNGSI HELPER
-# (Semua fungsi Anda dikumpulkan di sini)
 # ==============================================================================
 
-# --- FUNGSI PEMUATAN DATA ---
+# --- FUNGSI PEMUATAN & PEMBERSIHAN DATA ---
 @st.cache_data
 def load_feather_file(uploaded_file):
+    """Memuat satu file Feather dan memastikan tipe data tanggal."""
     if uploaded_file is None: return None
     try:
         df = pd.read_feather(uploaded_file)
@@ -35,52 +35,98 @@ def load_feather_file(uploaded_file):
 
 @st.cache_data(ttl=600)
 def load_qa_qc_from_gsheet(url):
+    """Hanya memuat data mentah dari Google Sheet."""
     if not url or "docs.google.com" not in url:
         st.warning("URL Google Sheet QA/QC tidak valid."); return pd.DataFrame()
     try:
         url = url.replace("/edit?gid=", "/export?format=csv&gid=").replace("/edit#gid=", "/export?format=csv&gid=")
         df = pd.read_csv(url, on_bad_lines='warn')
-        df.columns = df.columns.str.strip()
         return df
     except Exception as e:
         st.error(f"Gagal memuat data dari Google Sheets. Error: {e}"); return pd.DataFrame()
 
-def process_qa_qc_data(df_raw):
+def clean_qa_qc_data(df_raw):
+    """
+    Fungsi sentral untuk membersihkan dan menstandarisasi data QA/QC.
+    Semua proses cleaning terjadi di sini.
+    """
     if df_raw.empty: return pd.DataFrame()
-    df_processed = df_raw.copy()
-    df_processed = df_processed.rename(columns={"Lokasi Store": "Branch", "Tanggal Visit": "Sales Date"})
-    try:
-        df_processed['Sales Date'] = pd.to_datetime(df_processed['Sales Date'], dayfirst=True, errors='coerce')
-    except Exception:
-        df_processed['Sales Date'] = pd.to_datetime(df_processed['Sales Date'], errors='coerce')
-    try:
-        first_question_col_name = [col for col in df_processed.columns if 'KEBERSIHAN' in col][0]
-        first_col_index = df_processed.columns.get_loc(first_question_col_name)
-        question_cols = df_processed.columns[first_col_index:].tolist()
-    except IndexError:
+    
+    df_clean = df_raw.copy()
+    # 1. Bersihkan nama kolom
+    df_clean.columns = df_clean.columns.str.strip().str.lower()
+    
+    # 2. Rename kolom utama
+    rename_map = {"lokasi store": "branch", "tanggal visit": "sales date"}
+    df_clean = df_clean.rename(columns=rename_map)
+    
+    # 3. Validasi dan konversi tipe data tanggal
+    if 'sales date' not in df_clean.columns:
+        # Tidak menampilkan error di sini agar tidak duplikat jika URL kosong
         return pd.DataFrame()
+    df_clean['sales date'] = pd.to_datetime(df_clean['sales date'], dayfirst=True, errors='coerce')
+    
+    return df_clean.dropna(subset=['sales date'])
+
+def process_qa_qc_for_summary(df_clean):
+    """
+    Mengolah data yang SUDAH BERSIH menjadi format ringkas untuk ringkasan/summary.
+    Fungsi ini tidak lagi melakukan cleaning.
+    """
+    if df_clean.empty: return pd.DataFrame()
+    
+    try:
+        first_question_col_name = [col for col in df_clean.columns if 'kebersihan' in col][0]
+        first_col_index = df_clean.columns.get_loc(first_question_col_name)
+        question_cols = df_clean.columns[first_col_index:].tolist()
+    except IndexError:
+        st.error("Format kolom data QA/QC tidak dikenali."); return pd.DataFrame()
+
     results = []
-    for index, row in df_processed.iterrows():
+    for index, row in df_clean.iterrows():
         answers = row[question_cols].astype(str).str.upper()
         total_y = (answers == 'Y').sum()
         total_n = (answers == 'N').sum()
         total_points = total_y + total_n
         score = (total_y / total_points * 100) if total_points > 0 else 0
-        results.append({"Branch": row["Branch"], "Sales Date": row["Sales Date"], "Skor Kepatuhan": score})
-    return pd.DataFrame(results).dropna(subset=['Sales Date'])
+        results.append({"Branch": row["branch"], "Sales Date": row["sales date"], "Skor Kepatuhan": score})
+        
+    return pd.DataFrame(results)
 
 # --- FUNGSI ANALISIS & VISUALISASI ---
-def display_detailed_qa_qc_analysis(df_qa_qc_raw):
-    st.subheader("Analisis Mendalam Kepatuhan Standar (Deep Dive)")
-    if df_qa_qc_raw.empty:
+def display_qa_qc_summary(df_processed):
+    """Menampilkan ringkasan strategis QA/QC."""
+    st.subheader("Ringkasan Kepatuhan Standar (QA/QC)")
+    if df_processed.empty:
         st.warning("Tidak ada data audit QA/QC untuk periode dan cabang yang dipilih."); return
+    
+    avg_score = df_processed['Skor Kepatuhan'].mean()
+    st.metric("Rata-rata Skor Kepatuhan (Compliance Score)", f"{avg_score:.1f}%")
+    
+    st.markdown("##### Tren Skor Kepatuhan per Audit")
+    fig1 = px.line(df_processed.sort_values('Sales Date'), x='Sales Date', y='Skor Kepatuhan', color='Branch', markers=True, title="Tren Skor Kepatuhan per Audit")
+    fig1.update_yaxes(range=[0, 105])
+    st.plotly_chart(fig1, use_container_width=True)
+    
+    st.markdown("##### Perbandingan Rata-rata Skor per Cabang")
+    branch_avg_score = df_processed.groupby('Branch')['Skor Kepatuhan'].mean().reset_index().sort_values('Skor Kepatuhan', ascending=False)
+    fig2 = px.bar(branch_avg_score, x='Branch', y='Skor Kepatuhan', title="Perbandingan Rata-rata Skor Kepatuhan antar Cabang", color='Skor Kepatuhan', color_continuous_scale='Greens')
+    st.plotly_chart(fig2, use_container_width=True)
+
+def display_detailed_qa_qc_analysis(df_clean):
+    """Menampilkan analisis mendalam dari data QA/QC yang SUDAH BERSIH."""
+    st.subheader("Analisis Mendalam Kepatuhan Standar (Deep Dive)")
+    if df_clean.empty:
+        st.warning("Tidak ada data audit QA/QC untuk periode dan cabang yang dipilih."); return
+        
     try:
-        first_question_col_name = [col for col in df_qa_qc_raw.columns if 'KEBERSIHAN' in col][0]
-        first_col_index = df_qa_qc_raw.columns.get_loc(first_question_col_name)
-        question_cols = df_qa_qc_raw.columns[first_col_index:].tolist()
+        first_question_col_name = [col for col in df_clean.columns if 'kebersihan' in col][0]
+        first_col_index = df_clean.columns.get_loc(first_question_col_name)
+        question_cols = df_clean.columns[first_col_index:].tolist()
     except (IndexError, KeyError):
         st.error("Format kolom data QA/QC tidak dikenali."); return
-    melted_df = df_qa_qc_raw[question_cols].melt()
+        
+    melted_df = df_clean[question_cols].melt()
     counts = melted_df['value'].astype(str).str.upper().value_counts()
     total_y, total_n = counts.get('Y', 0), counts.get('N', 0)
     total_points = total_y + total_n
@@ -92,12 +138,13 @@ def display_detailed_qa_qc_analysis(df_qa_qc_raw):
     col3.metric("✔️ Poin Terpenuhi (Y)", f"{total_y}")
     col4.metric("❌ Poin Pelanggaran (N)", f"{total_n}")
     st.markdown("---")
+    
     st.markdown("##### Rincian Skor per Kategori")
     categories = sorted(list(set([col.split('[')[0].strip() for col in question_cols])))
     cat_col1, cat_col2 = st.columns(2)
     for i, category in enumerate(categories):
         cat_cols = [col for col in question_cols if col.startswith(category)]
-        cat_melted = df_qa_qc_raw[cat_cols].melt()
+        cat_melted = df_clean[cat_cols].melt()
         cat_counts = cat_melted['value'].astype(str).str.upper().value_counts()
         cat_y, cat_n = cat_counts.get('Y', 0), cat_counts.get('N', 0)
         cat_total = cat_y + cat_n
@@ -106,21 +153,17 @@ def display_detailed_qa_qc_analysis(df_qa_qc_raw):
         with target_col:
             st.text(category); st.progress(int(cat_score)); st.caption(f"Skor: {cat_score:.1f}% ({cat_y}/{cat_total})")
     st.markdown("---")
+    
     st.markdown("##### Daftar Temuan (Poin 'N')")
-    findings_df = df_qa_qc_raw[['Lokasi Store', 'Tanggal Visit'] + question_cols].melt(id_vars=['Lokasi Store', 'Tanggal Visit'], var_name='Detail Pemeriksaan', value_name='Hasil')
+    findings_df = df_clean[['branch', 'sales date'] + question_cols].melt(id_vars=['branch', 'sales date'], var_name='Detail Pemeriksaan', value_name='Hasil')
     findings_df = findings_df[findings_df['Hasil'].astype(str).str.upper() == 'N']
     if findings_df.empty:
         st.success("🎉 Hebat! Tidak ada temuan atau pelanggaran pada data yang dipilih.")
     else:
         findings_df['Kategori'] = findings_df['Detail Pemeriksaan'].apply(lambda x: x.split('[')[0].strip())
-        st.dataframe(findings_df[['Lokasi Store', 'Tanggal Visit', 'Kategori', 'Detail Pemeriksaan']], use_container_width=True)
+        st.dataframe(findings_df[['branch', 'sales date', 'Kategori', 'Detail Pemeriksaan']], use_container_width=True)
 
-# (Sisa fungsi-fungsi analisis Anda yang lain ditempatkan di sini... saya persingkat agar tidak terlalu panjang)
-# ...
-# def analyze_monthly_trends(...):
-# def display_monthly_kpis(...):
-# def display_trend_chart_and_analysis(...):
-# ... dan seterusnya ...
+# (Sisa fungsi-fungsi analisis lainnya bisa ditambahkan di sini jika ada)
 
 # ==============================================================================
 # 3. FUNGSI UTAMA APLIKASI (HANYA UNTUK TAMPILAN DASHBOARD)
@@ -139,10 +182,13 @@ def main_dashboard():
         
     df_sales = load_feather_file(sales_file)
     df_complaints = load_feather_file(complaint_file)
-    df_qa_qc_raw = load_qa_qc_from_gsheet(qa_qc_url)
-    df_qa_qc_processed = process_qa_qc_data(df_qa_qc_raw)
     
-    if df_sales is None or df_complaints is None or df_qa_qc_processed.empty:
+    # --- ALUR BARU YANG LEBIH BAIK UNTUK QA/QC ---
+    df_qa_qc_raw = load_qa_qc_from_gsheet(qa_qc_url)
+    df_qa_qc_clean = clean_qa_qc_data(df_qa_qc_raw)
+    df_qa_qc_processed = process_qa_qc_for_summary(df_qa_qc_clean)
+    
+    if df_sales is None or df_complaints is None or df_qa_qc_clean.empty:
         st.error("Gagal memuat semua sumber data. Pastikan file Feather valid dan URL Google Sheet benar serta berisi data."); 
         st.stop()
         
@@ -159,72 +205,64 @@ def main_dashboard():
     start_date, end_date = date_range
 
     # Filter semua dataframe
-    df_sales_filtered = df_sales[(df_sales['Sales Date'].dt.date >= start_date) & (df_sales['Sales Date'].dt.date <= end_date)]
-    df_complaints_filtered = df_complaints[(df_complaints['Sales Date'].dt.date >= start_date) & (df_complaints['Sales Date'].dt.date <= end_date)]
-    df_qa_qc_filtered_processed = df_qa_qc_processed[(df_qa_qc_processed['Sales Date'].dt.date >= start_date) & (df_qa_qc_processed['Sales Date'].dt.date <= end_date)]
-    
-    # Perlu penanganan khusus untuk memfilter df_qa_qc_raw karena nama kolom tanggalnya berbeda
-    df_qa_qc_raw['Sales Date'] = pd.to_datetime(df_qa_qc_raw['Tanggal Visit'], dayfirst=True, errors='coerce')
-    df_qa_qc_filtered_raw = df_qa_qc_raw[df_qa_qc_raw['Sales Date'].dt.date.between(start_date, end_date)]
+    df_sales_filtered = df_sales[df_sales['Sales Date'].dt.date.between(start_date, end_date)]
+    df_complaints_filtered = df_complaints[df_complaints['Sales Date'].dt.date.between(start_date, end_date)]
+    df_qa_qc_filtered_clean = df_qa_qc_clean[df_qa_qc_clean['sales date'].dt.date.between(start_date, end_date)]
+    df_qa_qc_filtered_processed = df_qa_qc_processed[df_qa_qc_processed['Sales Date'].dt.date.between(start_date, end_date)]
 
     if selected_branch != ALL_BRANCHES_OPTION:
         df_sales_filtered = df_sales_filtered[df_sales_filtered['Branch'] == selected_branch]
         df_complaints_filtered = df_complaints_filtered[df_complaints_filtered['Branch'] == selected_branch]
+        df_qa_qc_filtered_clean = df_qa_qc_filtered_clean[df_qa_qc_filtered_clean['branch'] == selected_branch]
         df_qa_qc_filtered_processed = df_qa_qc_filtered_processed[df_qa_qc_filtered_processed['Branch'] == selected_branch]
-        df_qa_qc_filtered_raw = df_qa_qc_filtered_raw[df_qa_qc_filtered_raw['Lokasi Store'] == selected_branch]
 
     if df_sales_filtered.empty: st.warning("Tidak ada data penjualan untuk filter yang dipilih."); st.stop()
 
     st.title(f"Dashboard Analisis Holistik: {selected_branch}")
     st.markdown(f"Periode Analisis: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
 
-    # (Logika tab Anda tidak berubah, saya persingkat juga)
-    tabs = st.tabs(["📈 Penjualan", "✅ Kualitas & Komplain", "⭐ Ringkasan QA/QC", "🔍 Detail Audit QA/QC", "🤖 AI Root Cause Agent"])
+    tabs = st.tabs(["📈 Penjualan", "✅ Kualitas & Komplain", "⭐ Ringkasan QA/QC", "🔍 Detail Audit QA/QC"])
+    
+    with tabs[0]: # Penjualan
+        st.write("Konten Analisis Penjualan di sini...")
+        # Ganti dengan pemanggilan fungsi analisis penjualan Anda, contoh:
+        # display_sales_analysis(df_sales_filtered)
+
+    with tabs[1]: # Kualitas & Komplain
+        st.write("Konten Kualitas & Komplain di sini...")
+        # Ganti dengan pemanggilan fungsi analisis komplain Anda, contoh:
+        # display_complaint_analysis(df_complaints_filtered)
+
     with tabs[2]: # Ringkasan QA/QC
-        # display_qa_qc_analysis(df_qa_qc_filtered_processed) # panggil fungsi ringkasan
-        st.write("Konten Ringkasan QA/QC")
+        display_qa_qc_summary(df_qa_qc_filtered_processed)
+        
     with tabs[3]: # Detail QA/QC
-        display_detailed_qa_qc_analysis(df_qa_qc_filtered_raw)
-    # ... Logika untuk tab-tab lain ...
-
-
+        display_detailed_qa_qc_analysis(df_qa_qc_filtered_clean)
+        
 # ==============================================================================
 # 4. ALUR UTAMA APLIKASI (MAIN EXECUTION FLOW)
 # ==============================================================================
-
 # Cek jika mode development (tanpa login) atau production (dengan login)
 if 'credentials' not in st.secrets or 'cookie' not in st.secrets:
     # --- Mode Development (langsung tampilkan dashboard) ---
     st.sidebar.warning("Mode Developer Aktif (tanpa login)")
     main_dashboard()
-
 else:
     # --- Mode Production (dengan proses login) ---
-    config = {
-        'credentials': dict(st.secrets['credentials']),
-        'cookie': dict(st.secrets['cookie'])
-    }
+    config = {'credentials': dict(st.secrets['credentials']),'cookie': dict(st.secrets['cookie'])}
     authenticator = stauth.Authenticate(
         config['credentials'],
         config['cookie']['name'],
         config['cookie']['key'],
         config['cookie']['expiry_days']
     )
-
-    # Render form login
     name, authentication_status, username = authenticator.login("Login", "main")
 
-    # Logika setelah proses login
     if authentication_status:
-        # --- Jika login BERHASIL ---
-        authenticator.logout("Logout", "sidebar", key='unique_logout_button') # Tombol logout ditaruh di sini
+        authenticator.logout("Logout", "sidebar", key='unique_logout_button')
         st.sidebar.success(f"Login sebagai **{name}**")
-        main_dashboard() # Panggil fungsi untuk menampilkan konten utama
-        
+        main_dashboard()
     elif authentication_status is False:
-        # --- Jika login GAGAL ---
         st.error("Username atau password salah.")
-        
     elif authentication_status is None:
-        # --- Jika BELUM login ---
         st.warning("Silakan masukkan username dan password Anda.")
