@@ -177,21 +177,30 @@ if uploaded_file is not None:
 
                 # --- Top & Bottom 5 Menu ---
                 st.subheader("Performa Menu Teratas & Terbawah")
-                sort_by = st.radio(
+                
+                # ✅ PERBAIKAN: Gunakan mapping untuk radio button
+                sort_options = {
+                    'Berdasarkan Penjualan (Rp)': 'Total_Penjualan_Rp',
+                    'Berdasarkan Kuantitas (Qty)': 'Total_Item_Terjual'
+                }
+                
+                sort_choice = st.radio(
                     "Urutkan berdasarkan:",
-                    ('Total Penjualan (Rp)', 'Total Item Terjual'),
+                    options=sort_options.keys(), # Tampilkan teks yang mudah dibaca
                     key=f'sort_{branch_name}',
                     horizontal=True
                 )
                 
-                menu_perf = branch_data['rekap_menu'].sort_values(sort_by, ascending=False)
-                top5 = menu_perf.head(5)
-                bottom5 = menu_perf.tail(5).sort_values(sort_by, ascending=True)
+                sort_by_column = sort_options[sort_choice] # Dapatkan nama kolom yang sebenarnya
                 
-                fig_top5 = px.bar(top5, y='Menu', x=sort_by, orientation='h', title="Top 5 Menu")
+                menu_perf = branch_data['rekap_menu'].sort_values(sort_by_column, ascending=False)
+                top5 = menu_perf.head(5)
+                bottom5 = menu_perf.tail(5).sort_values(sort_by_column, ascending=True)
+                
+                fig_top5 = px.bar(top5, y='Menu', x=sort_by_column, orientation='h', title="Top 5 Menu")
                 st.plotly_chart(fig_top5, use_container_width=True)
                 
-                fig_bottom5 = px.bar(bottom5, y='Menu', x=sort_by, orientation='h', title="Bottom 5 Menu")
+                fig_bottom5 = px.bar(bottom5, y='Menu', x=sort_by_column, orientation='h', title="Bottom 5 Menu")
                 st.plotly_chart(fig_bottom5, use_container_width=True)
 
                 # --- Distribusi Kategori Menu ---
