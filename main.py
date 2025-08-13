@@ -137,11 +137,14 @@ if uploaded_file is not None:
                 latest_atv = latest_kpi_day['ATV (Nilai Transaksi Rata2)'] if latest_kpi_day is not None else 0
                 latest_upt = latest_kpi_day['UPT (Item per Transaksi)'] if latest_kpi_day is not None else 0
                 
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Total Penjualan", format_rupiah(branch_total_penjualan))
-                c2.metric("Total Transaksi", f"{branch_total_transaksi:,}")
-                c3.metric("ATV (Hari Terakhir)", format_rupiah(latest_atv))
-                c4.metric("UPT (Hari Terakhir)", f"{latest_upt:.2f}")
+                # ✅ PERBAIKAN: KPI ditampilkan dalam 2 baris
+                row1_cols = st.columns(2)
+                row1_cols[0].metric("Total Penjualan", format_rupiah(branch_total_penjualan))
+                row1_cols[1].metric("Total Transaksi", f"{branch_total_transaksi:,}")
+                
+                row2_cols = st.columns(2)
+                row2_cols[0].metric("ATV (Hari Terakhir)", format_rupiah(latest_atv))
+                row2_cols[1].metric("UPT (Hari Terakhir)", f"{latest_upt:.2f}")
 
                 # --- Monitoring Stok Terbaru ---
                 st.subheader("Stok Produk Utama (Terbaru)")
@@ -153,6 +156,7 @@ if uploaded_file is not None:
                             st.metric(
                                 label=f"{row['Product Name']} (Kapasitas: {row['Capacity']})",
                                 value=f"{row['Stock']}",
+                                # ✅ PERBAIKAN: delta_color="off" untuk menghilangkan panah
                                 delta=f"{row['Percentage']:.0%}",
                                 delta_color="off" 
                             )
@@ -175,45 +179,43 @@ if uploaded_file is not None:
                 fig_jam.update_layout(yaxis2=dict(title='Waktu Layanan (Menit)', overlaying='y', side='right', showgrid=False))
                 st.plotly_chart(fig_jam, use_container_width=True)
 
-                # --- Top & Bottom 5 Menu ---
-                st.subheader("Performa Menu Teratas & Terbawah")
-                
-                # ✅ PERBAIKAN: Gunakan mapping untuk radio button
+                # --- Analisis Performa Menu & Kategori ---
+                st.subheader("Analisis Performa Menu & Kategori")
+
+                # ✅ PERBAIKAN: Opsi filter diletakkan di atas
                 sort_options = {
                     'Berdasarkan Penjualan (Rp)': 'Total_Penjualan_Rp',
                     'Berdasarkan Kuantitas (Qty)': 'Total_Item_Terjual'
                 }
-                
                 sort_choice = st.radio(
-                    "Urutkan berdasarkan:",
-                    options=sort_options.keys(), # Tampilkan teks yang mudah dibaca
+                    "Tampilkan data berdasarkan:",
+                    options=sort_options.keys(),
                     key=f'sort_{branch_name}',
                     horizontal=True
                 )
+                sort_by_column = sort_options[sort_choice]
                 
-                sort_by_column = sort_options[sort_choice] # Dapatkan nama kolom yang sebenarnya
+                # ✅ PERBAIKAN: Donut chart diletakkan di sini
+                donut1, donut2 = st.columns(2)
+                with donut1:
+                    sales_by_cat = branch_data['rekap_menu'].groupby('Menu Category Detail')['Total_Penjualan_Rp'].sum().reset_index()
+                    fig_donut_sales = px.pie(sales_by_cat, names='Menu Category Detail', values='Total_Penjualan_Rp', hole=0.5, title="Distribusi Penjualan (Rp)")
+                    st.plotly_chart(fig_donut_sales, use_container_width=True)
+                with donut2:
+                    qty_by_cat = branch_data['rekap_menu'].groupby('Menu Category Detail')['Total_Item_Terjual'].sum().reset_index()
+                    fig_donut_qty = px.pie(qty_by_cat, names='Menu Category Detail', values='Total_Item_Terjual', hole=0.5, title="Distribusi Kuantitas (Qty)")
+                    st.plotly_chart(fig_donut_qty, use_container_width=True)
                 
+                # ✅ PERBAIKAN: Bar chart Top & Bottom Menu
                 menu_perf = branch_data['rekap_menu'].sort_values(sort_by_column, ascending=False)
                 top5 = menu_perf.head(5)
                 bottom5 = menu_perf.tail(5).sort_values(sort_by_column, ascending=True)
                 
-                fig_top5 = px.bar(top5, y='Menu', x=sort_by_column, orientation='h', title="Top 5 Menu")
+                fig_top5 = px.bar(top5.iloc[::-1], y='Menu', x=sort_by_column, orientation='h', title="Top 5 Menu")
                 st.plotly_chart(fig_top5, use_container_width=True)
                 
                 fig_bottom5 = px.bar(bottom5, y='Menu', x=sort_by_column, orientation='h', title="Bottom 5 Menu")
                 st.plotly_chart(fig_bottom5, use_container_width=True)
-
-                # --- Distribusi Kategori Menu ---
-                st.subheader("Distribusi Kategori Menu")
-                donut1, donut2 = st.columns(2)
-                with donut1:
-                    sales_by_cat = branch_data['rekap_menu'].groupby('Menu Category Detail')['Total_Penjualan_Rp'].sum().reset_index()
-                    fig_donut_sales = px.pie(sales_by_cat, names='Menu Category Detail', values='Total_Penjualan_Rp', hole=0.5, title="Berdasarkan Penjualan (Rp)")
-                    st.plotly_chart(fig_donut_sales, use_container_width=True)
-                with donut2:
-                    qty_by_cat = branch_data['rekap_menu'].groupby('Menu Category Detail')['Total_Item_Terjual'].sum().reset_index()
-                    fig_donut_qty = px.pie(qty_by_cat, names='Menu Category Detail', values='Total_Item_Terjual', hole=0.5, title="Berdasarkan Kuantitas (Qty)")
-                    st.plotly_chart(fig_donut_qty, use_container_width=True)
 
                 # --- Rekap Metode Pembayaran ---
                 st.subheader("Metode Pembayaran")
