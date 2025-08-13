@@ -126,7 +126,15 @@ if uploaded_file is not None:
                 sales_increase = ((avg_sales_after - avg_sales_before) / avg_sales_before) if avg_sales_before > 0 else 0
                 
                 avg_google_score_before = before_kpi['Google_Review_Score'].mean() if not before_kpi.empty else 0
-                latest_google_score_after = after_kpi.sort_values('Date', ascending=False)['Google_Review_Score'].iloc[0] if not after_kpi.empty else 0
+                
+                # ✅ PERBAIKAN: Logika perhitungan skor Google Review untuk gabungan
+                if branch_name == "Gabungan":
+                    # Cari skor terbaru untuk setiap cabang, lalu hitung rata-ratanya
+                    latest_scores = after_kpi.sort_values('Date', ascending=False).drop_duplicates(subset=['Branch'], keep='first')
+                    latest_google_score_after = latest_scores['Google_Review_Score'].mean() if not latest_scores.empty else 0
+                else:
+                    # Logika asli untuk cabang individu (sudah benar)
+                    latest_google_score_after = after_kpi.sort_values('Date', ascending=False)['Google_Review_Score'].iloc[0] if not after_kpi.empty else 0
 
                 total_complaints_after = after_kpi['Jumlah_Complaints'].sum()
                 total_complaints_before = before_kpi['Jumlah_Complaints'].sum()
