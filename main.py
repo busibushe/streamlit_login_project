@@ -21,7 +21,6 @@ def load_data(uploaded_file):
     """Membaca semua sheet dari file Excel yang diunggah dengan key yang unik."""
     try:
         xls = pd.ExcelFile(uploaded_file)
-        # ✅ PERBAIKAN: Gunakan mapping untuk key yang unik dan deskriptif
         sheet_map = {
             'KPI Harian': 'kpi_harian',
             'Analisis per Jam': 'analisis_jam',
@@ -91,15 +90,13 @@ if uploaded_file is not None:
         # ==================================================================
         # Proses Filtering Data
         # ==================================================================
-        # ✅ PERBAIKAN: Filter semua data berdasarkan tanggal di awal
         filtered_data = {}
         for key, df in data.items():
             if 'Date' in df.columns:
                 filtered_data[key] = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
             else:
-                filtered_data[key] = df # Untuk data yang tidak memiliki kolom tanggal
+                filtered_data[key] = df
 
-        # Pisahkan data per cabang dari data yang sudah difilter
         bintara_data = {key: df[df['Branch'] == 'Bintara'] for key, df in filtered_data.items()}
         jatiwaringin_data = {key: df[df['Branch'] == 'Jatiwaringin'] for key, df in filtered_data.items()}
         
@@ -136,15 +133,29 @@ if uploaded_file is not None:
                 branch_total_penjualan = branch_kpi['Total_Penjualan_Rp'].sum()
                 branch_total_transaksi = branch_kpi['Jumlah_Transaksi'].sum()
                 
-                c1, c2 = st.columns(2)
+                latest_kpi_day = branch_kpi.sort_values('Date', ascending=False).iloc[0] if not branch_kpi.empty else None
+                latest_atv = latest_kpi_day['ATV (Nilai Transaksi Rata2)'] if latest_kpi_day is not None else 0
+                latest_upt = latest_kpi_day['UPT (Item per Transaksi)'] if latest_kpi_day is not None else 0
+                
+                c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Total Penjualan", format_rupiah(branch_total_penjualan))
                 c2.metric("Total Transaksi", f"{branch_total_transaksi:,}")
+                c3.metric("ATV (Hari Terakhir)", format_rupiah(latest_atv))
+                c4.metric("UPT (Hari Terakhir)", f"{latest_upt:.2f}")
 
                 # --- Monitoring Stok Terbaru ---
                 st.subheader("Stok Produk Utama (Terbaru)")
                 latest_stok = branch_data['laporan_stok'].sort_values('Date').drop_duplicates('Product Name', keep='last')
                 if not latest_stok.empty:
-                    st.dataframe(latest_stok[['Product Name', 'Stock', 'Capacity', 'Percentage']], use_container_width=True)
+                    stock_cols = st.columns(len(latest_stok))
+                    for i, (_, row) in enumerate(latest_stok.iterrows()):
+                        with stock_cols[i]:
+                            st.metric(
+                                label=f"{row['Product Name']} (Kapasitas: {row['Capacity']})",
+                                value=f"{row['Stock']}",
+                                delta=f"{row['Percentage']:.0%}",
+                                delta_color="off" 
+                            )
                 else:
                     st.warning("Data stok tidak tersedia pada rentang tanggal ini.")
 
@@ -158,7 +169,6 @@ if uploaded_file is not None:
 
                 # --- Analisis per Jam ---
                 st.subheader("Analisis Aktivitas per Jam")
-                # ✅ PERBAIKAN: Menggunakan key yang benar
                 hourly_perf = pd.merge(branch_data['analisis_jam'], branch_data['waktu_pelayanan'], on=['Branch', 'Hour'], how='outer').sort_values('Hour')
                 fig_jam = px.bar(hourly_perf, x='Hour', y='Jumlah_Pengunjung_Transaksi', labels={'Hour': 'Jam', 'Jumlah_Pengunjung_Transaksi': 'Jumlah Transaksi'})
                 fig_jam.add_scatter(x=hourly_perf['Hour'], y=hourly_perf['Rata2_Waktu_Pelayanan_Menit'], mode='lines', name='Waktu Layanan (Menit)', yaxis='y2')
@@ -167,15 +177,34 @@ if uploaded_file is not None:
 
                 # --- Top & Bottom 5 Menu ---
                 st.subheader("Performa Menu Teratas & Terbawah")
-                menu_perf = branch_data['rekap_menu'].sort_values('Total_Penjualan_Rp', ascending=False)
-                top5 = menu_perf.head(5)
-                bottom5 = menu_perf.tail(5)
+                sort_by = st.radio(
+                    "Urutkan berdasarkan:",
+                    ('Total Penjualan (Rp)', 'Total Item Terjual'),
+                    key=f'sort_{branch_name}',
+                    horizontal=True
+                )
                 
-                fig_top5 = px.bar(top5, y='Menu', x='Total_Penjualan_Rp', orientation='h', title="Top 5 Menu Terlaris", labels={'Total_Penjualan_Rp': 'Total Penjualan (Rp)'})
+                menu_perf = branch_data['rekap_menu'].sort_values(sort_by, ascending=False)
+                top5 = menu_perf.head(5)
+                bottom5 = menu_perf.tail(5).sort_values(sort_by, ascending=True)
+                
+                fig_top5 = px.bar(top5, y='Menu', x=sort_by, orientation='h', title="Top 5 Menu")
                 st.plotly_chart(fig_top5, use_container_width=True)
                 
-                fig_bottom5 = px.bar(bottom5, y='Menu', x='Total_Penjualan_Rp', orientation='h', title="Bottom 5 Menu Kurang Laris", labels={'Total_Penjualan_Rp': 'Total Penjualan (Rp)'})
+                fig_bottom5 = px.bar(bottom5, y='Menu', x=sort_by, orientation='h', title="Bottom 5 Menu")
                 st.plotly_chart(fig_bottom5, use_container_width=True)
+
+                # --- Distribusi Kategori Menu ---
+                st.subheader("Distribusi Kategori Menu")
+                donut1, donut2 = st.columns(2)
+                with donut1:
+                    sales_by_cat = branch_data['rekap_menu'].groupby('Menu Category Detail')['Total_Penjualan_Rp'].sum().reset_index()
+                    fig_donut_sales = px.pie(sales_by_cat, names='Menu Category Detail', values='Total_Penjualan_Rp', hole=0.5, title="Berdasarkan Penjualan (Rp)")
+                    st.plotly_chart(fig_donut_sales, use_container_width=True)
+                with donut2:
+                    qty_by_cat = branch_data['rekap_menu'].groupby('Menu Category Detail')['Total_Item_Terjual'].sum().reset_index()
+                    fig_donut_qty = px.pie(qty_by_cat, names='Menu Category Detail', values='Total_Item_Terjual', hole=0.5, title="Berdasarkan Kuantitas (Qty)")
+                    st.plotly_chart(fig_donut_qty, use_container_width=True)
 
                 # --- Rekap Metode Pembayaran ---
                 st.subheader("Metode Pembayaran")
@@ -184,7 +213,8 @@ if uploaded_file is not None:
                 
                 # --- Kinerja Waiter ---
                 st.subheader("Kinerja Waiter")
-                fig_waiter = px.bar(branch_data['kinerja_waiter'], x='Waiter', y='Total_Penjualan_Diambil', title="Total Penjualan per Waiter", labels={'Total_Penjualan_Diambil': 'Total Penjualan (Rp)'})
+                fig_waiter = px.bar(branch_data['kinerja_waiter'], x='Waiter', y='ATV_per_Waiter', title="Rata-rata Nilai Transaksi (ATV) per Waiter",
+                                    labels={'ATV_per_Waiter': 'ATV (Rp)'})
                 st.plotly_chart(fig_waiter, use_container_width=True)
 
 else:
