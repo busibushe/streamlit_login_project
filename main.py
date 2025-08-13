@@ -44,6 +44,17 @@ def load_data(uploaded_file):
         st.error(f"Error: Gagal membaca file Excel. Pastikan semua sheet yang dibutuhkan ada. Detail: {e}")
         return None
 
+@st.cache_data
+def load_kpi_data(uploaded_kpi_file):
+    """Membaca file data KPI tambahan."""
+    try:
+        df = pd.read_excel(uploaded_kpi_file)
+        df['Date'] = pd.to_datetime(df['Date'])
+        return df
+    except Exception as e:
+        st.error(f"Error: Gagal membaca file KPI tambahan. Detail: {e}")
+        return None
+
 def format_rupiah(value):
     """Mengubah angka menjadi format Rupiah."""
     return f"Rp {value:,.0f}".replace(',', '.')
@@ -52,21 +63,20 @@ def format_rupiah(value):
 # Tampilan Utama Dashboard
 # ==============================================================================
 
-st.title("📊 Dashboard Perbandingan Kinerja: Bintara vs Jatiwaringin")
+st.title("📊 Dashboard Monitoring & Perbandingan Kinerja Tim X")
 
 # --- Bagian Upload File ---
-uploaded_file = st.file_uploader(
-    "Unggah file laporan Excel terbaru (`laporan_analisis_toko...xlsx`)",
-    type=['xlsx']
-)
-
-st.info(
-    """
-    **Info:** Versi ini menggunakan upload file manual. Versi selanjutnya akan terhubung langsung ke Google Sheets 
-    untuk pembaruan data otomatis setiap hari.
-    """,
-    icon="💡"
-)
+col_upload1, col_upload2 = st.columns(2)
+with col_upload1:
+    uploaded_file = st.file_uploader(
+        "1. Unggah Laporan Analisis Toko (`laporan_analisis_toko...xlsx`)",
+        type=['xlsx']
+    )
+with col_upload2:
+    uploaded_kpi_file = st.file_uploader(
+        "2. Unggah Data KPI Tambahan (`data_kpi_tambahan.xlsx`)",
+        type=['xlsx']
+    )
 
 if uploaded_file is not None:
     data = load_data(uploaded_file)
@@ -80,7 +90,7 @@ if uploaded_file is not None:
         max_date = data['kpi_harian']['Date'].max().date()
         
         date_range = st.sidebar.date_input(
-            "Pilih Rentang Tanggal",
+            "Pilih Rentang Tanggal Analisis",
             value=(max_date - timedelta(days=6), max_date),
             min_value=min_date,
             max_value=max_date
@@ -88,7 +98,48 @@ if uploaded_file is not None:
         start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
 
         # ==================================================================
-        # Proses Filtering Data
+        # BAGIAN BARU: Monitoring KPI Tim X
+        # ==================================================================
+        st.header("Kontrol KPI Utama Tim X (Periode Intervensi)")
+        if uploaded_kpi_file:
+            kpi_data = load_kpi_data(uploaded_kpi_file)
+            intervention_date = pd.to_datetime('2025-08-05')
+
+            # Filter data sebelum dan sesudah intervensi
+            kpi_harian_all = data['kpi_harian'] # Gunakan data lengkap untuk perbandingan
+            
+            before_sales = kpi_harian_all[kpi_harian_all['Date'] < intervention_date]
+            after_sales = kpi_harian_all[kpi_harian_all['Date'] >= intervention_date]
+            
+            after_kpi = kpi_data[kpi_data['Date'] >= intervention_date]
+
+            # Hitung Metrik
+            avg_sales_before = before_sales['Total_Penjualan_Rp'].mean() if not before_sales.empty else 0
+            avg_sales_after = after_sales['Total_Penjualan_Rp'].mean() if not after_sales.empty else 0
+            sales_increase = ((avg_sales_after - avg_sales_before) / avg_sales_before) if avg_sales_before > 0 else 0
+            
+            latest_google_score = after_kpi.sort_values('Date', ascending=False)['Google_Review_Score'].iloc[0] if not after_kpi.empty else 0
+            total_complaints_after = after_kpi['Jumlah_Complaints'].sum()
+            
+            latest_qaqc = after_kpi.dropna(subset=['Skor_QAQC']).sort_values('Date', ascending=False)['Skor_QAQC'].iloc[0] if not after_kpi.dropna(subset=['Skor_QAQC']).empty else 0
+            
+            kpi_cols = st.columns(5)
+            with kpi_cols[0]:
+                st.metric("Peningkatan Penjualan", f"{sales_increase:.1%}", f"Target: ≥ 30%")
+            with kpi_cols[1]:
+                st.metric("Skor Google Review", f"{latest_google_score:.2f} ★", "Target: ≥ 4.0 ★")
+            with kpi_cols[2]:
+                st.metric("Total Keluhan", f"{total_complaints_after}", "Target: 0")
+            with kpi_cols[3]:
+                st.metric("Skor QAQC Terakhir", f"{latest_qaqc:.0f}", "Target: ≥ 90")
+            with kpi_cols[4]:
+                st.metric("Kepatuhan Upload", "N/A", "Target: 100%") # Placeholder
+        else:
+            st.warning("Unggah file `data_kpi_tambahan.xlsx` untuk melihat progres KPI Tim X.")
+        st.divider()
+
+        # ==================================================================
+        # Proses Filtering Data untuk Bagian Bawah
         # ==================================================================
         filtered_data = {}
         for key, df in data.items():
@@ -100,22 +151,6 @@ if uploaded_file is not None:
         bintara_data = {key: df[df['Branch'] == 'Bintara'] for key, df in filtered_data.items()}
         jatiwaringin_data = {key: df[df['Branch'] == 'Jatiwaringin'] for key, df in filtered_data.items()}
         
-        # ==================================================================
-        # Tampilan Metrik Utama (Summary Tengah)
-        # ==================================================================
-        st.header(f"Ringkasan Kinerja Gabungan ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b')})")
-        
-        kpi_gabungan = filtered_data['kpi_harian']
-        total_penjualan = kpi_gabungan['Total_Penjualan_Rp'].sum()
-        total_transaksi = kpi_gabungan['Jumlah_Transaksi'].sum()
-        avg_atv = total_penjualan / total_transaksi if total_transaksi > 0 else 0
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Penjualan Gabungan", format_rupiah(total_penjualan))
-        col2.metric("Total Transaksi Gabungan", f"{total_transaksi:,}")
-        col3.metric("Rata-rata ATV Gabungan", format_rupiah(avg_atv))
-        st.divider()
-
         # ==================================================================
         # Layout Perbandingan Dua Kolom
         # ==================================================================
@@ -137,7 +172,6 @@ if uploaded_file is not None:
                 latest_atv = latest_kpi_day['ATV (Nilai Transaksi Rata2)'] if latest_kpi_day is not None else 0
                 latest_upt = latest_kpi_day['UPT (Item per Transaksi)'] if latest_kpi_day is not None else 0
                 
-                # ✅ PERBAIKAN: KPI ditampilkan dalam 2 baris
                 row1_cols = st.columns(2)
                 row1_cols[0].metric("Total Penjualan", format_rupiah(branch_total_penjualan))
                 row1_cols[1].metric("Total Transaksi", f"{branch_total_transaksi:,}")
@@ -154,10 +188,9 @@ if uploaded_file is not None:
                     for i, (_, row) in enumerate(latest_stok.iterrows()):
                         with stock_cols[i]:
                             st.metric(
-                                label=f"{row['Product Name']} (Kapasitas: {row['Capacity']})",
+                                label=f"{row['Product Name']} ({row['Capacity']})",
                                 value=f"{row['Stock']}",
-                                # ✅ PERBAIKAN: delta_color="off" untuk menghilangkan panah
-                                delta=f"{row['Percentage']:.0%}",
+                                delta=f"{row['Percentage']:.0%} terisi",
                                 delta_color="off" 
                             )
                 else:
@@ -182,7 +215,6 @@ if uploaded_file is not None:
                 # --- Analisis Performa Menu & Kategori ---
                 st.subheader("Analisis Performa Menu & Kategori")
 
-                # ✅ PERBAIKAN: Opsi filter diletakkan di atas
                 sort_options = {
                     'Berdasarkan Penjualan (Rp)': 'Total_Penjualan_Rp',
                     'Berdasarkan Kuantitas (Qty)': 'Total_Item_Terjual'
@@ -195,18 +227,15 @@ if uploaded_file is not None:
                 )
                 sort_by_column = sort_options[sort_choice]
                 
-                # ✅ PERBAIKAN: Donut chart diletakkan di sini
-                donut1, donut2 = st.columns(2)
-                with donut1:
+                # ✅ PERBAIKAN: Donut chart dinamis berdasarkan pilihan
+                if sort_choice == 'Berdasarkan Penjualan (Rp)':
                     sales_by_cat = branch_data['rekap_menu'].groupby('Menu Category Detail')['Total_Penjualan_Rp'].sum().reset_index()
-                    fig_donut_sales = px.pie(sales_by_cat, names='Menu Category Detail', values='Total_Penjualan_Rp', hole=0.5, title="Distribusi Penjualan (Rp)")
-                    st.plotly_chart(fig_donut_sales, use_container_width=True)
-                with donut2:
+                    fig_donut = px.pie(sales_by_cat, names='Menu Category Detail', values='Total_Penjualan_Rp', hole=0.5, title="Distribusi Penjualan (Rp)")
+                else:
                     qty_by_cat = branch_data['rekap_menu'].groupby('Menu Category Detail')['Total_Item_Terjual'].sum().reset_index()
-                    fig_donut_qty = px.pie(qty_by_cat, names='Menu Category Detail', values='Total_Item_Terjual', hole=0.5, title="Distribusi Kuantitas (Qty)")
-                    st.plotly_chart(fig_donut_qty, use_container_width=True)
+                    fig_donut = px.pie(qty_by_cat, names='Menu Category Detail', values='Total_Item_Terjual', hole=0.5, title="Distribusi Kuantitas (Qty)")
+                st.plotly_chart(fig_donut, use_container_width=True)
                 
-                # ✅ PERBAIKAN: Bar chart Top & Bottom Menu
                 menu_perf = branch_data['rekap_menu'].sort_values(sort_by_column, ascending=False)
                 top5 = menu_perf.head(5)
                 bottom5 = menu_perf.tail(5).sort_values(sort_by_column, ascending=True)
