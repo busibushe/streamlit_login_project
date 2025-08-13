@@ -95,6 +95,12 @@ if uploaded_file is not None:
             min_value=min_date,
             max_value=max_date
         )
+        
+        # ✅ PERBAIKAN: Cek jika rentang tanggal sudah lengkap untuk menghindari IndexError
+        if len(date_range) != 2:
+            st.warning("Silakan pilih tanggal awal dan tanggal akhir pada sidebar.")
+            st.stop()
+            
         start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
 
         # ==================================================================
@@ -106,7 +112,7 @@ if uploaded_file is not None:
             intervention_date = pd.to_datetime('2025-08-05')
 
             # Filter data sebelum dan sesudah intervensi
-            kpi_harian_all = data['kpi_harian'] # Gunakan data lengkap untuk perbandingan
+            kpi_harian_all = data['kpi_harian']
             
             before_sales = kpi_harian_all[kpi_harian_all['Date'] < intervention_date]
             after_sales = kpi_harian_all[kpi_harian_all['Date'] >= intervention_date]
@@ -141,11 +147,14 @@ if uploaded_file is not None:
         # ==================================================================
         # Proses Filtering Data untuk Bagian Bawah
         # ==================================================================
+        # ✅ PERBAIKAN: Filter semua data berdasarkan tanggal di awal
         filtered_data = {}
         for key, df in data.items():
             if 'Date' in df.columns:
                 filtered_data[key] = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
             else:
+                # Untuk data yang tidak memiliki kolom tanggal, kita tidak bisa memfilternya
+                # Data ini akan menampilkan rangkuman dari keseluruhan periode file yang diunggah
                 filtered_data[key] = df
 
         bintara_data = {key: df[df['Branch'] == 'Bintara'] for key, df in filtered_data.items()}
@@ -206,6 +215,7 @@ if uploaded_file is not None:
 
                 # --- Analisis per Jam ---
                 st.subheader("Analisis Aktivitas per Jam")
+                st.caption("Catatan: Data ini merupakan rangkuman dari keseluruhan periode file yang diunggah.")
                 hourly_perf = pd.merge(branch_data['analisis_jam'], branch_data['waktu_pelayanan'], on=['Branch', 'Hour'], how='outer').sort_values('Hour')
                 fig_jam = px.bar(hourly_perf, x='Hour', y='Jumlah_Pengunjung_Transaksi', labels={'Hour': 'Jam', 'Jumlah_Pengunjung_Transaksi': 'Jumlah Transaksi'})
                 fig_jam.add_scatter(x=hourly_perf['Hour'], y=hourly_perf['Rata2_Waktu_Pelayanan_Menit'], mode='lines', name='Waktu Layanan (Menit)', yaxis='y2')
@@ -214,6 +224,7 @@ if uploaded_file is not None:
 
                 # --- Analisis Performa Menu & Kategori ---
                 st.subheader("Analisis Performa Menu & Kategori")
+                st.caption("Catatan: Data ini merupakan rangkuman dari keseluruhan periode file yang diunggah.")
 
                 sort_options = {
                     'Berdasarkan Penjualan (Rp)': 'Total_Penjualan_Rp',
@@ -227,7 +238,6 @@ if uploaded_file is not None:
                 )
                 sort_by_column = sort_options[sort_choice]
                 
-                # ✅ PERBAIKAN: Donut chart dinamis berdasarkan pilihan
                 if sort_choice == 'Berdasarkan Penjualan (Rp)':
                     sales_by_cat = branch_data['rekap_menu'].groupby('Menu Category Detail')['Total_Penjualan_Rp'].sum().reset_index()
                     fig_donut = px.pie(sales_by_cat, names='Menu Category Detail', values='Total_Penjualan_Rp', hole=0.5, title="Distribusi Penjualan (Rp)")
@@ -248,11 +258,13 @@ if uploaded_file is not None:
 
                 # --- Rekap Metode Pembayaran ---
                 st.subheader("Metode Pembayaran")
+                st.caption("Catatan: Data ini merupakan rangkuman dari keseluruhan periode file yang diunggah.")
                 fig_payment = px.pie(branch_data['rekap_payment'], names='Payment Method', values='Jumlah_Transaksi', hole=0.4, title="Distribusi Metode Pembayaran")
                 st.plotly_chart(fig_payment, use_container_width=True)
                 
                 # --- Kinerja Waiter ---
                 st.subheader("Kinerja Waiter")
+                st.caption("Catatan: Data ini merupakan rangkuman dari keseluruhan periode file yang diunggah.")
                 fig_waiter = px.bar(branch_data['kinerja_waiter'], x='Waiter', y='ATV_per_Waiter', title="Rata-rata Nilai Transaksi (ATV) per Waiter",
                                     labels={'ATV_per_Waiter': 'ATV (Rp)'})
                 st.plotly_chart(fig_waiter, use_container_width=True)
