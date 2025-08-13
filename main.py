@@ -96,7 +96,6 @@ if uploaded_file is not None:
             max_value=max_date
         )
         
-        # ✅ PERBAIKAN: Cek jika rentang tanggal sudah lengkap untuk menghindari IndexError
         if len(date_range) != 2:
             st.warning("Silakan pilih tanggal awal dan tanggal akhir pada sidebar.")
             st.stop()
@@ -113,33 +112,71 @@ if uploaded_file is not None:
 
             # Filter data sebelum dan sesudah intervensi
             kpi_harian_all = data['kpi_harian']
-            
             before_sales = kpi_harian_all[kpi_harian_all['Date'] < intervention_date]
             after_sales = kpi_harian_all[kpi_harian_all['Date'] >= intervention_date]
             
+            before_kpi = kpi_data[kpi_data['Date'] < intervention_date]
             after_kpi = kpi_data[kpi_data['Date'] >= intervention_date]
 
-            # Hitung Metrik
+            # --- Hitung Metrik KPI ---
+            # 1. Peningkatan Penjualan
             avg_sales_before = before_sales['Total_Penjualan_Rp'].mean() if not before_sales.empty else 0
             avg_sales_after = after_sales['Total_Penjualan_Rp'].mean() if not after_sales.empty else 0
             sales_increase = ((avg_sales_after - avg_sales_before) / avg_sales_before) if avg_sales_before > 0 else 0
             
-            latest_google_score = after_kpi.sort_values('Date', ascending=False)['Google_Review_Score'].iloc[0] if not after_kpi.empty else 0
+            # 2. Skor Google Review
+            avg_google_score_before = before_kpi['Google_Review_Score'].mean() if not before_kpi.empty else 0
+            latest_google_score_after = after_kpi.sort_values('Date', ascending=False)['Google_Review_Score'].iloc[0] if not after_kpi.empty else 0
+
+            # 3. Total Keluhan
             total_complaints_after = after_kpi['Jumlah_Complaints'].sum()
+            avg_daily_complaints_before = before_kpi['Jumlah_Complaints'].mean() if not before_kpi.empty else 0
             
-            latest_qaqc = after_kpi.dropna(subset=['Skor_QAQC']).sort_values('Date', ascending=False)['Skor_QAQC'].iloc[0] if not after_kpi.dropna(subset=['Skor_QAQC']).empty else 0
+            # 4. Skor QAQC
+            latest_qaqc_after = after_kpi.dropna(subset=['Skor_QAQC']).sort_values('Date', ascending=False)['Skor_QAQC'].iloc[0] if not after_kpi.dropna(subset=['Skor_QAQC']).empty else 0
             
+            # 5. Kepatuhan Upload
+            compliance_after = after_kpi['Upload_Kebersihan'].mean() if not after_kpi.empty else 0
+            compliance_before = before_kpi['Upload_Kebersihan'].mean() if not before_kpi.empty else 0
+            
+            # --- Tampilkan Metrik KPI ---
             kpi_cols = st.columns(5)
             with kpi_cols[0]:
-                st.metric("Peningkatan Penjualan", f"{sales_increase:.1%}", f"Target: ≥ 30%")
+                st.metric(
+                    label="Peningkatan Penjualan (Rata-rata Harian)",
+                    value=format_rupiah(avg_sales_after),
+                    delta=f"{sales_increase:.1%} vs {format_rupiah(avg_sales_before)}",
+                    help="Membandingkan rata-rata penjualan harian sebelum dan sesudah intervensi."
+                )
             with kpi_cols[1]:
-                st.metric("Skor Google Review", f"{latest_google_score:.2f} ★", "Target: ≥ 4.0 ★")
+                st.metric(
+                    label="Skor Google Review (Terbaru)",
+                    value=f"{latest_google_score_after:.2f} ★",
+                    delta=f"dari rata-rata {avg_google_score_before:.2f} ★",
+                    help="Skor terbaru dibandingkan rata-rata skor sebelum intervensi."
+                )
             with kpi_cols[2]:
-                st.metric("Total Keluhan", f"{total_complaints_after}", "Target: 0")
+                st.metric(
+                    label="Total Keluhan (Setelah Intervensi)",
+                    value=f"{total_complaints_after}",
+                    delta=f"Rata-rata harian sebelumnya: {avg_daily_complaints_before:.2f}",
+                    delta_color="inverse",
+                    help="Total keluhan selama periode intervensi. Nilai pembanding adalah rata-rata keluhan harian sebelumnya."
+                )
             with kpi_cols[3]:
-                st.metric("Skor QAQC Terakhir", f"{latest_qaqc:.0f}", "Target: ≥ 90")
+                st.metric(
+                    label="Skor QAQC Terakhir",
+                    value=f"{latest_qaqc_after:.0f}",
+                    delta=f"Target: ≥ 90",
+                    help="Skor dari kunjungan QAQC terakhir."
+                )
             with kpi_cols[4]:
-                st.metric("Kepatuhan Upload", "N/A", "Target: 100%") # Placeholder
+                st.metric(
+                    label="Kepatuhan Upload Kebersihan",
+                    value=f"{compliance_after:.1%}",
+                    delta=f"dari {compliance_before:.1%}",
+                    help="Persentase hari di mana foto kebersihan diunggah, dibandingkan periode sebelumnya."
+                )
         else:
             st.warning("Unggah file `data_kpi_tambahan.xlsx` untuk melihat progres KPI Tim X.")
         st.divider()
@@ -147,14 +184,11 @@ if uploaded_file is not None:
         # ==================================================================
         # Proses Filtering Data untuk Bagian Bawah
         # ==================================================================
-        # ✅ PERBAIKAN: Filter semua data berdasarkan tanggal di awal
         filtered_data = {}
         for key, df in data.items():
             if 'Date' in df.columns:
                 filtered_data[key] = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
             else:
-                # Untuk data yang tidak memiliki kolom tanggal, kita tidak bisa memfilternya
-                # Data ini akan menampilkan rangkuman dari keseluruhan periode file yang diunggah
                 filtered_data[key] = df
 
         bintara_data = {key: df[df['Branch'] == 'Bintara'] for key, df in filtered_data.items()}
