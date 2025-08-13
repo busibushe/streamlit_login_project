@@ -18,16 +18,27 @@ st.set_page_config(
 
 @st.cache_data
 def load_data(uploaded_file):
-    """Membaca semua sheet dari file Excel yang diunggah."""
+    """Membaca semua sheet dari file Excel yang diunggah dengan key yang unik."""
     try:
         xls = pd.ExcelFile(uploaded_file)
-        # Membaca semua sheet yang dibutuhkan
-        sheet_names = ['KPI Harian', 'Analisis per Jam', 'Waktu Pelayanan per Jam', 'Rekap Kategori & Menu', 'Rekap Metode Pembayaran', 'Analisis Kinerja Waiter', 'Laporan Stok Harian']
-        data = {name.split(' ')[0].lower(): pd.read_excel(xls, name) for name in sheet_names}
+        # ✅ PERBAIKAN: Gunakan mapping untuk key yang unik dan deskriptif
+        sheet_map = {
+            'KPI Harian': 'kpi_harian',
+            'Analisis per Jam': 'analisis_jam',
+            'Waktu Pelayanan per Jam': 'waktu_pelayanan',
+            'Rekap Kategori & Menu': 'rekap_menu',
+            'Rekap Metode Pembayaran': 'rekap_payment',
+            'Analisis Kinerja Waiter': 'kinerja_waiter',
+            'Laporan Stok Harian': 'laporan_stok'
+        }
+        
+        data = {}
+        for sheet_name, key in sheet_map.items():
+            data[key] = pd.read_excel(xls, sheet_name)
         
         # --- Pre-processing Data ---
-        data['kpi']['Date'] = pd.to_datetime(data['kpi']['Date'])
-        data['laporan']['Date'] = pd.to_datetime(data['laporan']['Date'])
+        data['kpi_harian']['Date'] = pd.to_datetime(data['kpi_harian']['Date'])
+        data['laporan_stok']['Date'] = pd.to_datetime(data['laporan_stok']['Date'])
         
         return data
     except Exception as e:
@@ -66,8 +77,8 @@ if uploaded_file is not None:
         # Sidebar untuk Filter Tanggal
         # ======================================================================
         st.sidebar.header("⚙️ Filter Data")
-        min_date = data['kpi']['Date'].min().date()
-        max_date = data['kpi']['Date'].max().date()
+        min_date = data['kpi_harian']['Date'].min().date()
+        max_date = data['kpi_harian']['Date'].max().date()
         
         date_range = st.sidebar.date_input(
             "Pilih Rentang Tanggal",
@@ -80,23 +91,26 @@ if uploaded_file is not None:
         # ==================================================================
         # Proses Filtering Data
         # ==================================================================
-        kpi_filtered = data['kpi'][(data['kpi']['Date'] >= start_date) & (data['kpi']['Date'] <= end_date)]
-        stok_filtered = data['laporan'][(data['laporan']['Date'] >= start_date) & (data['laporan']['Date'] <= end_date)]
-        
-        # Pisahkan data per cabang
-        bintara_data = {key: df[df['Branch'] == 'Bintara'] for key, df in data.items()}
-        jatiwaringin_data = {key: df[df['Branch'] == 'Jatiwaringin'] for key, df in data.items()}
-        
-        kpi_bintara = kpi_filtered[kpi_filtered['Branch'] == 'Bintara']
-        kpi_jatiwaringin = kpi_filtered[kpi_filtered['Branch'] == 'Jatiwaringin']
+        # ✅ PERBAIKAN: Filter semua data berdasarkan tanggal di awal
+        filtered_data = {}
+        for key, df in data.items():
+            if 'Date' in df.columns:
+                filtered_data[key] = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
+            else:
+                filtered_data[key] = df # Untuk data yang tidak memiliki kolom tanggal
 
+        # Pisahkan data per cabang dari data yang sudah difilter
+        bintara_data = {key: df[df['Branch'] == 'Bintara'] for key, df in filtered_data.items()}
+        jatiwaringin_data = {key: df[df['Branch'] == 'Jatiwaringin'] for key, df in filtered_data.items()}
+        
         # ==================================================================
         # Tampilan Metrik Utama (Summary Tengah)
         # ==================================================================
         st.header(f"Ringkasan Kinerja Gabungan ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b')})")
         
-        total_penjualan = kpi_filtered['Total_Penjualan_Rp'].sum()
-        total_transaksi = kpi_filtered['Jumlah_Transaksi'].sum()
+        kpi_gabungan = filtered_data['kpi_harian']
+        total_penjualan = kpi_gabungan['Total_Penjualan_Rp'].sum()
+        total_transaksi = kpi_gabungan['Jumlah_Transaksi'].sum()
         avg_atv = total_penjualan / total_transaksi if total_transaksi > 0 else 0
 
         col1, col2, col3 = st.columns(3)
@@ -110,18 +124,17 @@ if uploaded_file is not None:
         # ==================================================================
         col_bintara, col_jatiwaringin = st.columns(2, gap="large")
 
-        for branch_name, branch_kpi, branch_all_data in [("Bintara", kpi_bintara, bintara_data), ("Jatiwaringin", kpi_jatiwaringin, jatiwaringin_data)]:
+        for branch_name, branch_data in [("Bintara", bintara_data), ("Jatiwaringin", jatiwaringin_data)]:
             
-            # Tentukan kolom mana yang akan diisi
             column_to_fill = col_bintara if branch_name == "Bintara" else col_jatiwaringin
             
             with column_to_fill:
                 st.header(f"📍 {branch_name}")
 
                 # --- KPI Individu ---
+                branch_kpi = branch_data['kpi_harian']
                 branch_total_penjualan = branch_kpi['Total_Penjualan_Rp'].sum()
                 branch_total_transaksi = branch_kpi['Jumlah_Transaksi'].sum()
-                branch_avg_atv = branch_total_penjualan / branch_total_transaksi if branch_total_transaksi > 0 else 0
                 
                 c1, c2 = st.columns(2)
                 c1.metric("Total Penjualan", format_rupiah(branch_total_penjualan))
@@ -129,7 +142,7 @@ if uploaded_file is not None:
 
                 # --- Monitoring Stok Terbaru ---
                 st.subheader("Stok Produk Utama (Terbaru)")
-                latest_stok = stok_filtered[stok_filtered['Branch'] == branch_name].sort_values('Date').drop_duplicates('Product Name', keep='last')
+                latest_stok = branch_data['laporan_stok'].sort_values('Date').drop_duplicates('Product Name', keep='last')
                 if not latest_stok.empty:
                     st.dataframe(latest_stok[['Product Name', 'Stock', 'Capacity', 'Percentage']], use_container_width=True)
                 else:
@@ -140,37 +153,38 @@ if uploaded_file is not None:
                 fig_tren = px.line(branch_kpi, x='Date', y=['Total_Penjualan_Rp', 'Jumlah_Transaksi', 'ATV (Nilai Transaksi Rata2)', 'UPT (Item per Transaksi)'],
                                    facet_row="variable", labels={"variable": "Metrik", "value": "Nilai", "Date": "Tanggal"},
                                    height=600, markers=True)
-                fig_tren.update_yaxes(matches=None) # Agar skala Y tiap grafik independen
+                fig_tren.update_yaxes(matches=None, title_text="")
                 st.plotly_chart(fig_tren, use_container_width=True)
 
                 # --- Analisis per Jam ---
                 st.subheader("Analisis Aktivitas per Jam")
-                hourly_perf = pd.merge(branch_all_data['jam'], branch_all_data['waktu'], on='Hour', how='outer').sort_values('Hour')
+                # ✅ PERBAIKAN: Menggunakan key yang benar
+                hourly_perf = pd.merge(branch_data['analisis_jam'], branch_data['waktu_pelayanan'], on=['Branch', 'Hour'], how='outer').sort_values('Hour')
                 fig_jam = px.bar(hourly_perf, x='Hour', y='Jumlah_Pengunjung_Transaksi', labels={'Hour': 'Jam', 'Jumlah_Pengunjung_Transaksi': 'Jumlah Transaksi'})
                 fig_jam.add_scatter(x=hourly_perf['Hour'], y=hourly_perf['Rata2_Waktu_Pelayanan_Menit'], mode='lines', name='Waktu Layanan (Menit)', yaxis='y2')
-                fig_jam.update_layout(yaxis2=dict(title='Waktu Layanan (Menit)', overlaying='y', side='right'))
+                fig_jam.update_layout(yaxis2=dict(title='Waktu Layanan (Menit)', overlaying='y', side='right', showgrid=False))
                 st.plotly_chart(fig_jam, use_container_width=True)
 
                 # --- Top & Bottom 5 Menu ---
                 st.subheader("Performa Menu Teratas & Terbawah")
-                menu_perf = branch_all_data['menu'].sort_values('Total_Penjualan_Rp', ascending=False)
+                menu_perf = branch_data['rekap_menu'].sort_values('Total_Penjualan_Rp', ascending=False)
                 top5 = menu_perf.head(5)
                 bottom5 = menu_perf.tail(5)
                 
-                fig_top5 = px.bar(top5, y='Menu', x='Total_Penjualan_Rp', orientation='h', title="Top 5 Menu Terlaris")
+                fig_top5 = px.bar(top5, y='Menu', x='Total_Penjualan_Rp', orientation='h', title="Top 5 Menu Terlaris", labels={'Total_Penjualan_Rp': 'Total Penjualan (Rp)'})
                 st.plotly_chart(fig_top5, use_container_width=True)
                 
-                fig_bottom5 = px.bar(bottom5, y='Menu', x='Total_Penjualan_Rp', orientation='h', title="Bottom 5 Menu Kurang Laris")
+                fig_bottom5 = px.bar(bottom5, y='Menu', x='Total_Penjualan_Rp', orientation='h', title="Bottom 5 Menu Kurang Laris", labels={'Total_Penjualan_Rp': 'Total Penjualan (Rp)'})
                 st.plotly_chart(fig_bottom5, use_container_width=True)
 
                 # --- Rekap Metode Pembayaran ---
                 st.subheader("Metode Pembayaran")
-                fig_payment = px.pie(branch_all_data['rekap'], names='Payment Method', values='Jumlah_Transaksi', hole=0.4, title="Distribusi Metode Pembayaran")
+                fig_payment = px.pie(branch_data['rekap_payment'], names='Payment Method', values='Jumlah_Transaksi', hole=0.4, title="Distribusi Metode Pembayaran")
                 st.plotly_chart(fig_payment, use_container_width=True)
                 
                 # --- Kinerja Waiter ---
                 st.subheader("Kinerja Waiter")
-                fig_waiter = px.bar(branch_all_data['analisis'], x='Waiter', y='Total_Penjualan_Diambil', title="Total Penjualan per Waiter")
+                fig_waiter = px.bar(branch_data['kinerja_waiter'], x='Waiter', y='Total_Penjualan_Diambil', title="Total Penjualan per Waiter", labels={'Total_Penjualan_Diambil': 'Total Penjualan (Rp)'})
                 st.plotly_chart(fig_waiter, use_container_width=True)
 
 else:
