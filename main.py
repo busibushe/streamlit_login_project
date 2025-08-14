@@ -25,7 +25,7 @@ def transform_sales_data(df: pd.DataFrame) -> pd.DataFrame:
         df.rename(columns={"Sales Date": "Date"}, inplace=True)
     
     # Pastikan kolom-kolom penting ada dan bertipe string
-    for col in ['Branch', 'Menu Category Detail', 'Menu', 'Payment Method', 'Visit Purpose', 'Bill Number']:
+    for col in ['Branch', 'Menu Category Detail', 'Menu', 'Payment Method', 'Visit Purpose', 'Bill Number', 'Waiter']:
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str)
         else:
@@ -120,6 +120,16 @@ if uploaded_files:
     raw_data = load_raw_data(uploaded_files)
 
     if raw_data is not None:
+        # ✅ PERBAIKAN: Tambahkan pengecekan kolom 'Date' dan hapus baris dengan tanggal kosong
+        if 'Date' not in raw_data.columns:
+            st.error("Error: File yang diunggah tidak memiliki kolom 'Date' atau 'Sales Date'. Mohon periksa kembali file Anda.")
+            st.stop() # Hentikan eksekusi jika kolom tanggal tidak ada
+
+        raw_data.dropna(subset=['Date'], inplace=True)
+        if raw_data.empty:
+            st.warning("Tidak ditemukan data dengan tanggal yang valid di file yang diunggah.")
+            st.stop()
+
         # ======================================================================
         # Sidebar untuk Filter Tanggal
         # ======================================================================
@@ -145,7 +155,6 @@ if uploaded_files:
         # ==================================================================
         st.header("Kontrol KPI Utama Tim X (Periode Intervensi)")
         if uploaded_kpi_file:
-            # (Logika KPI tidak berubah, tetap menggunakan file terpisah)
             kpi_data = load_kpi_data(uploaded_kpi_file)
             intervention_date = pd.to_datetime('2025-08-05')
             
@@ -212,20 +221,14 @@ if uploaded_files:
                 ).reset_index()
                 kpi_harian['ATV (Nilai Transaksi Rata2)'] = (kpi_harian['Total_Penjualan_Rp'] / kpi_harian['Jumlah_Transaksi']).fillna(0)
                 kpi_harian['UPT (Item per Transaksi)'] = (kpi_harian['Total_Item_Terjual'] / kpi_harian['Jumlah_Transaksi']).fillna(0)
-
+                
                 # --- Analisis per Jam (dihitung on-the-fly) ---
                 branch_df['Hour'] = branch_df['Order Time'].dt.hour
                 analisis_jam = branch_df.groupby('Hour').agg(
                     Jumlah_Pengunjung_Transaksi=('Bill Number', 'nunique')
                 ).reset_index()
                 
-                # --- Lanjutan Tampilan ---
-                # (Kode untuk menampilkan metrik, tren, dan grafik lainnya tetap sama,
-                #  tapi sekarang sumbernya adalah data mentah yang sudah difilter 'branch_df')
-                
-                # ... (Kode untuk metrik, tren, analisis jam, menu, payment, waiter)
-                # ... (Ini akan menjadi panjang, jadi saya singkat. Logikanya adalah
-                # ... melakukan groupby pada 'branch_df' untuk setiap grafik)
+                # --- Tampilan Metrik, Tren, dan Grafik ---
                 st.subheader("Tren Kinerja Harian")
                 fig_tren = px.line(kpi_harian, x='Date', y=['Total_Penjualan_Rp', 'Jumlah_Transaksi', 'ATV (Nilai Transaksi Rata2)', 'UPT (Item per Transaksi)'],
                                    facet_row="variable", labels={"variable": "Metrik", "value": "Nilai", "Date": "Tanggal"},
@@ -236,6 +239,46 @@ if uploaded_files:
                 st.subheader("Analisis Aktivitas per Jam")
                 fig_jam = px.bar(analisis_jam, x='Hour', y='Jumlah_Pengunjung_Transaksi', labels={'Hour': 'Jam', 'Jumlah_Pengunjung_Transaksi': 'Jumlah Transaksi'})
                 st.plotly_chart(fig_jam, use_container_width=True)
+                
+                st.subheader("Analisis Performa Menu & Kategori")
+                sort_options = {
+                    'Berdasarkan Penjualan (Rp)': 'Total After Bill Discount',
+                    'Berdasarkan Kuantitas (Qty)': 'Qty'
+                }
+                sort_choice = st.radio("Urutkan berdasarkan:", options=sort_options.keys(), key=f'sort_{branch_name}', horizontal=True)
+                sort_by_column = sort_options[sort_choice]
+                
+                menu_perf = branch_df.groupby(['Menu Category Detail', 'Menu']).agg(
+                    Total_Penjualan_Rp=('Total After Bill Discount', 'sum'),
+                    Qty=('Qty', 'sum')
+                ).reset_index()
+                
+                fig_donut = px.pie(menu_perf, names='Menu Category Detail', values=sort_by_column, hole=0.5, title=f"Distribusi Kategori Berdasarkan {sort_choice}")
+                st.plotly_chart(fig_donut, use_container_width=True)
+                
+                menu_perf = menu_perf.sort_values(sort_by_column, ascending=False)
+                top5 = menu_perf.head(5)
+                bottom5 = menu_perf.tail(5).sort_values(sort_by_column, ascending=True)
+                
+                fig_top5 = px.bar(top5.iloc[::-1], y='Menu', x=sort_by_column, orientation='h', title="Top 5 Menu")
+                st.plotly_chart(fig_top5, use_container_width=True)
+                
+                fig_bottom5 = px.bar(bottom5, y='Menu', x=sort_by_column, orientation='h', title="Bottom 5 Menu")
+                st.plotly_chart(fig_bottom5, use_container_width=True)
+
+                st.subheader("Metode Pembayaran")
+                payment_perf = branch_df.groupby('Payment Method')['Bill Number'].nunique().reset_index()
+                fig_payment = px.pie(payment_perf, names='Payment Method', values='Bill Number', hole=0.4, title="Distribusi Metode Pembayaran")
+                st.plotly_chart(fig_payment, use_container_width=True)
+                
+                st.subheader("Kinerja Waiter")
+                waiter_perf = branch_df[branch_df['Waiter'] != ''].groupby('Waiter').agg(
+                    Total_Penjualan_Diambil=('Total After Bill Discount', 'sum'),
+                    Jumlah_Transaksi_Dilayani=('Bill Number', 'nunique')
+                ).reset_index()
+                waiter_perf['ATV_per_Waiter'] = (waiter_perf['Total_Penjualan_Diambil'] / waiter_perf['Jumlah_Transaksi_Dilayani']).fillna(0)
+                fig_waiter = px.bar(waiter_perf, x='Waiter', y='ATV_per_Waiter', title="Rata-rata Nilai Transaksi (ATV) per Waiter", labels={'ATV_per_Waiter': 'ATV (Rp)'})
+                st.plotly_chart(fig_waiter, use_container_width=True)
 
 else:
     st.info("Silakan unggah file data transaksi mentah untuk memulai analisis.")
