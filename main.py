@@ -34,7 +34,7 @@ supabase = init_supabase_connection()
 # ==============================================================================
 # FUNGSI PEMUATAN DATA DARI SUPABASE
 # ==============================================================================
-@st.cache_data(ttl=600)
+# @st.cache_data(ttl=600)
 def load_data_from_supabase(table_name: str):
     """
     Memuat data dari tabel Supabase dan mengembalikannya sebagai DataFrame.
