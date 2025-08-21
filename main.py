@@ -310,13 +310,24 @@ def main_app(user_name):
       authenticator.logout("Logout", "sidebar")
       st.sidebar.success(f"Login sebagai: **{user_name}**")
 
-    st.title("📊 Dashboard Analisis Holistik")
-    st.info("Memuat data dari Supabase... Harap tunggu sebentar.")
+    st.title("📊 Dashboard Analisis Penjualan")
+    st.info("Memuat data penjualan dari Supabase... Harap tunggu sebentar.")
 
-    # Ganti bagian unggah file dengan pemuatan data dari Supabase
-    df_sales = load_data_from_supabase("sales_data") # Ganti 'sales_data' dengan nama tabel penjualan Anda
-    df_complaints = load_data_from_supabase("complaints_data") # Ganti dengan nama tabel komplain Anda
-    df_qa_qc = load_data_from_supabase("qa_qc_data") # Ganti dengan nama tabel QA/QC Anda
+    # =====================================================================
+    # ▼▼▼ PERUBAHAN UTAMA ADA DI SINI ▼▼▼
+    # =====================================================================
+    # Muat data penjualan seperti biasa
+    df_sales = load_data_from_supabase("sales_data") 
+    
+    # Buat DataFrame kosong untuk data yang belum ada
+    # Pastikan ada kolom-kolom penting agar filter tidak error
+    df_complaints = pd.DataFrame(columns=['Branch', 'Sales Date', 'kesalahan', 'golongan', 'Waktu Penyelesaian (Jam)'])
+    df_qa_qc = pd.DataFrame(columns=['Branch', 'Sales Date', 'Skor Kepatuhan'])
+    
+    # Konversi tipe data tanggal agar konsisten
+    df_complaints['Sales Date'] = pd.to_datetime(df_complaints['Sales Date'])
+    df_qa_qc['Sales Date'] = pd.to_datetime(df_qa_qc['Sales Date'])
+    # =====================================================================
 
     if df_sales.empty:
         st.error("Gagal memuat data penjualan dari Supabase. Aplikasi tidak dapat dilanjutkan.")
@@ -337,7 +348,7 @@ def main_app(user_name):
     date_mask_sales = (df_sales['Sales Date'].dt.date >= start_date) & (df_sales['Sales Date'].dt.date <= end_date)
     df_sales_filtered = df_sales[date_mask_sales]
     
-    # Filter df_complaints dan df_qa_qc jika tidak kosong
+    # Filter df_complaints dan df_qa_qc (akan menghasilkan DataFrame kosong, tapi tidak error)
     df_complaints_filtered = pd.DataFrame()
     if not df_complaints.empty:
         date_mask_complaints = (df_complaints['Sales Date'].dt.date >= start_date) & (df_complaints['Sales Date'].dt.date <= end_date)
@@ -360,12 +371,11 @@ def main_app(user_name):
     st.header(f"Menampilkan Analisis untuk: {selected_branch}")
     st.markdown(f"Periode: **{start_date.strftime('%d %B %Y')}** hingga **{end_date.strftime('%d %B %Y')}**")
 
+    # Sisa kode tetap sama...
     with st.spinner("Menganalisis data... 🤖"):
         monthly_agg = analyze_monthly_trends(df_sales_filtered)
         df_branch_health = calculate_branch_health(df_sales_filtered, df_complaints_filtered)
         
-        # Jalankan kedua agent (menggunakan data lengkap untuk konteks historis)
-        # Simpan hasil ke session_state agar tidak dijalankan ulang terus-menerus
         if 'op_agent_results' not in st.session_state:
             st.session_state.op_agent_results = run_operational_agent(df_sales, df_complaints, df_qa_qc)
         if 'strat_agent_results' not in st.session_state:
@@ -413,7 +423,6 @@ def main_app(user_name):
                 title="Diagnosis Strategis Jangka Panjang",
                 info_text="Agent ini menganalisis tren bulanan (minimal 4 bulan) untuk mengidentifikasi pola fundamental dan mengevaluasi dampak strategi jangka panjang."
             )
-
 # ==============================================================================
 # LOGIKA AUTENTIKASI
 # ==============================================================================
