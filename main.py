@@ -43,19 +43,27 @@ def load_data_from_supabase(table_name: str):
         response = supabase.table(table_name).select("*").execute()
         df = pd.DataFrame(response.data)
         
-        # Penyesuaian nama kolom dan tipe data tanggal
+        # ==========================================================
+        # ▼▼▼ TAMBAHAN KODE DEBUG DI SINI ▼▼▼
+        # ==========================================================
+        st.write(f"DEBUG: Data mentah dari tabel '{table_name}':")
+        st.write(f"- Jumlah baris: {df.shape[0]}")
+        
+        # Konversi kolom tanggal dan cetak rentangnya
         if 'Date' in df.columns:
-            # Ganti nama 'Date' menjadi 'Sales Date' agar sesuai dengan sisa kode
             df.rename(columns={'Date': 'Sales Date'}, inplace=True)
         
         if 'Sales Date' in df.columns:
             df['Sales Date'] = pd.to_datetime(df['Sales Date'])
-            
+            min_date = df['Sales Date'].min()
+            max_date = df['Sales Date'].max()
+            st.write(f"- Rentang tanggal yang ditarik: {min_date.strftime('%Y-%m-%d')} hingga {max_date.strftime('%Y-%m-%d')}")
+        # ==========================================================
+
         return df
     except Exception as e:
         st.error(f"Gagal mengambil data dari tabel '{table_name}': {e}")
         return pd.DataFrame()
-
 
 # ==============================================================================
 # FUNGSI-FUNGSI ANALISIS & VISUALISASI (Tidak ada perubahan di sini)
