@@ -34,37 +34,38 @@ supabase = init_supabase_connection()
 # ==============================================================================
 # FUNGSI PEMUATAN DATA DARI SUPABASE
 # ==============================================================================
-@st.cache_data(ttl=600) # Cache data selama 10 menit
+@st.cache_data(ttl=600)
 def load_data_from_supabase(table_name: str):
     """
     Memuat data dari tabel Supabase dan mengembalikannya sebagai DataFrame.
     """
     try:
-        response = supabase.table(table_name).select("*").execute()
+        # ==========================================================
+        # ▼▼▼ PERUBAHAN ADA DI BARIS DI BAWAH INI ▼▼▼
+        # ==========================================================
+        # Menambahkan .range() untuk mengambil lebih dari 1000 baris
+        response = supabase.table(table_name).select("*").range(0, 2000000).execute() # Ambil hingga 2 juta baris
+        # ==========================================================
+        
         df = pd.DataFrame(response.data)
         
-        # ==========================================================
-        # ▼▼▼ TAMBAHAN KODE DEBUG DI SINI ▼▼▼
-        # ==========================================================
+        # Hapus kode debug yang lama jika Anda mau
         st.write(f"DEBUG: Data mentah dari tabel '{table_name}':")
         st.write(f"- Jumlah baris: {df.shape[0]}")
         
-        # Konversi kolom tanggal dan cetak rentangnya
         if 'Date' in df.columns:
             df.rename(columns={'Date': 'Sales Date'}, inplace=True)
         
-        if 'Sales Date' in df.columns:
+        if 'Sales Date' in df.columns and not df.empty:
             df['Sales Date'] = pd.to_datetime(df['Sales Date'])
             min_date = df['Sales Date'].min()
             max_date = df['Sales Date'].max()
             st.write(f"- Rentang tanggal yang ditarik: {min_date.strftime('%Y-%m-%d')} hingga {max_date.strftime('%Y-%m-%d')}")
-        # ==========================================================
 
         return df
     except Exception as e:
         st.error(f"Gagal mengambil data dari tabel '{table_name}': {e}")
         return pd.DataFrame()
-
 # ==============================================================================
 # FUNGSI-FUNGSI ANALISIS & VISUALISASI (Tidak ada perubahan di sini)
 # ==============================================================================
