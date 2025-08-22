@@ -1,6 +1,3 @@
-# Pastikan Anda sudah menginstal library yang dibutuhkan:
-# pip install streamlit pandas plotly openpyxl
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -103,7 +100,6 @@ def calculate_rfm(df):
 # --- SIDEBAR UNTUK UPLOAD FILE ---
 with st.sidebar:
     st.header("⚙️ Pengaturan")
-    # Memperbarui file_uploader untuk menerima CSV dan XLSX
     uploaded_file = st.file_uploader("Pilih file CSV atau XLSX", type=["csv", "xlsx"])
 
 # --- KONTEN UTAMA APLIKASI ---
@@ -111,16 +107,14 @@ if uploaded_file is not None:
     df = load_data(uploaded_file)
     
     if df is not None:
-        # Menggunakan nama kolom yang sudah distandardisasi (snake_case)
-        # Pastikan Anda menggunakan nama kolom yang sudah dibersihkan di seluruh kode
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📊 Ringkasan Umum", "👑 Segmentasi RFM", "🎂 Demografi Pelanggan",
             "🍝 Produk & Cabang", "📈 Akuisisi Member"
         ])
 
-        # ... (sisa kode sama persis, pastikan menggunakan nama kolom snake_case) ...
         with tab1:
             st.header("Ringkasan Umum Bisnis")
+            # ... (kode di tab ini tidak berubah) ...
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Total Pelanggan", f"{df['member_code'].nunique():,}")
             col2.metric("Total Transaksi", f"{df['lifetime_transaction'].sum():,}")
@@ -141,6 +135,7 @@ if uploaded_file is not None:
 
         with tab2:
             st.header("👑 Segmentasi Pelanggan (RFM Analysis)")
+            # ... (kode di tab ini tidak berubah) ...
             st.markdown("RFM adalah metode segmentasi berdasarkan Recency, Frequency, dan Monetary.")
             rfm_df = calculate_rfm(df)
             if rfm_df is not None:
@@ -155,14 +150,31 @@ if uploaded_file is not None:
         with tab3:
             st.header("🎂 Analisis Demografi Pelanggan")
             if 'dob' in df.columns:
-                df['age'] = (datetime.now() - df['dob']).astype('<m8[Y]')
-                bins = [0, 17, 24, 34, 44, 54, 64, 100]
+                
+                # --- PERBAIKAN DI SINI ---
+                st.subheader("Perhitungan Umur (Age Calculation)")
+                # Hitung selisih waktu. Hasilnya akan mengandung NaT jika 'dob' kosong/invalid
+                time_diff = datetime.now() - df['dob']
+
+                # Konversi ke tahun. Bagi dengan 365.25 untuk akurasi. 
+                # NaT akan otomatis menjadi NaN (Not a Number) yang bisa di-handle
+                age_float = time_diff.dt.days / 365.25
+
+                # Ganti nilai NaN (umur yang tidak bisa dihitung) dengan 0 atau nilai lain
+                # Lalu konversi semua umur menjadi angka bulat (integer)
+                df['age'] = age_float.fillna(0).astype(int)
+                # --- AKHIR PERBAIKAN ---
+
+                # Buat Kelompok Umur
+                bins = [0, 17, 24, 34, 44, 54, 64, 150] # Batas atas dinaikkan
                 labels = ['<18', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']
                 df['age_group'] = pd.cut(df['age'], bins=bins, labels=labels, right=False)
+                
                 c1, c2 = st.columns(2)
                 with c1:
                     st.subheader("Total Belanja Berdasarkan Kelompok Umur")
-                    age_spend = df.groupby('age_group')['lifetime_spend'].sum().reset_index()
+                    # Filter data dimana age_group tidak kosong
+                    age_spend = df[df['age_group'].notna()].groupby('age_group')['lifetime_spend'].sum().reset_index()
                     fig_age = px.bar(age_spend, x='age_group', y='lifetime_spend', title="Total Belanja vs Kelompok Umur")
                     st.plotly_chart(fig_age, use_container_width=True)
                 with c2:
